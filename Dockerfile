@@ -11,7 +11,7 @@ WORKDIR /srv/app
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /uvx /bin/
 
 # Dependencies first (layer caching)
-COPY pyproject.toml uv.lock .python-version ./
+COPY pyproject.toml uv.lock .python-version README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app

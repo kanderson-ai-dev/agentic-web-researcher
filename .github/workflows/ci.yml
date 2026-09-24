@@ -34,3 +34,9 @@ jobs:
 
       - name: EDD quality gate (offline scorecard)
         run: uv run python -m evaluation.run_eval
+
+      - name: Dependency audit
+        run: uvx pip-audit -r requirements.txt
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
