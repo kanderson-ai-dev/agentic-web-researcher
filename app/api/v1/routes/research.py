@@ -5,7 +5,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.core.rate_limit import rate_limiter
 from app.core.schemas import (
@@ -19,6 +19,7 @@ from app.core.security import require_auth
 from app.graph.guardrails import screen_topic
 from app.services.job_runner import JobRunner
 from app.services.job_store import JobStore
+from app.services.report_pdf import build_pdf
 
 router = APIRouter(
     prefix="/research", tags=["research"], dependencies=[Depends(require_auth)]
@@ -121,6 +122,23 @@ async def stream_research(job_id: str, request: Request) -> StreamingResponse:
 async def list_research(request: Request) -> list[ResearchJob]:
     """List recent research jobs (newest first)."""
     return await _store(request).list_recent()
+
+
+@router.get("/{job_id}/report.pdf")
+async def download_report_pdf(job_id: str, request: Request) -> Response:
+    """Download the final report as a PDF (available once a report exists)."""
+    job = await _store(request).get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if not job.report:
+        raise HTTPException(status_code=409, detail="job has no report yet")
+    return Response(
+        content=build_pdf(job),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="research-{job_id[:8]}.pdf"'
+        },
+    )
 
 
 @router.post("/{job_id}/review", response_model=ResearchJob, status_code=202)

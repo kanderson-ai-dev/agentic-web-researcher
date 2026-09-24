@@ -106,6 +106,7 @@ the live model when real credentials are provided.
 | `GET /api/v1/research/{id}` | Poll status and final result |
 | `GET /api/v1/research/{id}/stream` | Live progress via SSE (per-node events) |
 | `POST /api/v1/research/{id}/review` | HITL decision for `awaiting_review` jobs |
+| `GET /api/v1/research/{id}/report.pdf` | Download the final report as a PDF |
 | `GET /health` / `GET /metrics` | Liveness + Prometheus exposition |
 | `/` and `/console/` | Landing page + operator console (login, live events, review UI) |
 

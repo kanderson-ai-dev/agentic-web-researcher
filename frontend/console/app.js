@@ -64,57 +64,47 @@ $("login-form").addEventListener("submit", async (e) => {
   }
 });
 
-/* Internal graph node names must never reach the UI: map each one to a
-   human-readable phase label, and collapse consecutive repeats of the same
-   phase into a single line with a counter. */
+/* Internal graph node names must never reach the UI: each one maps to a
+   human-readable phase label shown next to the spinner. */
 const NODE_LABELS = {
   __job__: "Job",
-  input_guardrail: "Screening topic",
-  planner: "Planning research questions",
-  search_worker: "Searching the web",
-  aggregate_search: "Collecting search results",
-  scrape_worker: "Fetching pages",
-  aggregate_documents: "Collecting documents",
-  document_worker: "Parsing & sanitizing content",
-  to_critic: "Preparing evidence",
-  critic: "Evaluating coverage",
-  replan: "Planning follow-up research",
-  writer: "Writing report",
-  output_guardrail: "Verifying citations",
-  human_review: "Submitting for review",
-  report_assembler: "Assembling final report",
+  input_guardrail: "Screening topic…",
+  planner: "Planning research questions…",
+  search_worker: "Searching the web…",
+  aggregate_search: "Collecting search results…",
+  scrape_worker: "Fetching pages…",
+  aggregate_documents: "Collecting documents…",
+  document_worker: "Parsing & sanitizing content…",
+  to_critic: "Preparing evidence…",
+  critic: "Evaluating coverage…",
+  replan: "Planning follow-up research…",
+  writer: "Writing report…",
+  output_guardrail: "Verifying citations…",
+  human_review: "Submitting for review…",
+  report_assembler: "Assembling final report…",
   rejection_output: "Request rejected",
 };
 
-const STATUS_LABELS = {
-  started: "started",
-  completed: "done",
-  failed: "failed",
-  awaiting_review: "awaiting your review",
-};
+let phaseTimer = null;
+let jobStartedAt = null;
 
-function logEvent(ev) {
-  const label = NODE_LABELS[ev.node] || ev.node;
-  const status = STATUS_LABELS[ev.status] || ev.status;
-  const time = new Date(ev.ts).toLocaleTimeString();
-  const log = $("event-log");
-  const last = log.lastElementChild;
+function startPhaseTimer() {
+  jobStartedAt = Date.now();
+  clearInterval(phaseTimer);
+  phaseTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - jobStartedAt) / 1000);
+    $("elapsed").textContent = `${s}s elapsed`;
+  }, 500);
+}
 
-  // Collapse consecutive events from the same phase into "label ×N".
-  if (last && last.dataset.node === ev.node && ev.node !== "__job__") {
-    const count = Number(last.dataset.count || 1) + 1;
-    last.dataset.count = String(count);
-    last.innerHTML =
-      `<span class="node">${label}</span> ${status}` +
-      `<span class="count">×${count}</span>` +
-      `<span class="time">${time}</span>`;
-    return;
-  }
-  const li = document.createElement("li");
-  li.dataset.node = ev.node;
-  li.innerHTML = `<span class="node">${label}</span> ${status}` +
-    `<span class="time">${time}</span>`;
-  log.appendChild(li);
+function stopPhaseTimer() {
+  clearInterval(phaseTimer);
+  phaseTimer = null;
+}
+
+function setPhase(ev) {
+  if (ev.node === "__job__") return;
+  $("phase-label").textContent = NODE_LABELS[ev.node] || "Working…";
 }
 
 $("topic-form").addEventListener("submit", async (e) => {
@@ -128,8 +118,11 @@ $("topic-form").addEventListener("submit", async (e) => {
     return;
   }
   currentJob = await resp.json();
-  $("event-log").innerHTML = "";
   $("job-status").textContent = currentJob.status;
+  $("phase-label").textContent = "Starting…";
+  $("elapsed").textContent = "";
+  $("spinner").classList.remove("done");
+  startPhaseTimer();
   show("progress-panel");
   hide("review-panel");
   hide("result-panel");
@@ -159,25 +152,38 @@ async function streamJob(jobId) {
 }
 
 function handleEvent(ev) {
-  logEvent(ev);
+  setPhase(ev);
   if (ev.node !== "__job__") return;
   if (ev.status === "awaiting_review") {
     $("job-status").textContent = "awaiting_review";
+    $("phase-label").textContent = "Waiting for your review";
+    $("spinner").classList.add("done");
+    stopPhaseTimer();
     openReview(JSON.parse(ev.detail || "{}"));
   } else if (ev.status === "completed" || ev.status === "failed") {
     $("job-status").textContent = ev.status;
+    $("phase-label").textContent =
+      ev.status === "completed" ? "Done" : "Job failed";
+    $("spinner").classList.add("done");
+    stopPhaseTimer();
     loadResult(currentJob.id);
   }
 }
 
 function openReview(payload) {
-  $("review-report").textContent = payload.report || "(no report)";
+  // The reviewer's decision happens *before* publication: approve as-is,
+  // edit the draft, or reject it. The preview renders as markdown.
+  $("review-report").innerHTML = payload.report
+    ? renderMarkdown(payload.report)
+    : "<p><em>(no report)</em></p>";
   $("review-meta").textContent = payload.escalated
     ? "Escalated: the critic could not resolve all coverage gaps."
     : "Routine review before publishing.";
   $("edit-area").value = payload.report || "";
   hide("edit-area");
+  show("review-report");
   editing = false;
+  $("edit-btn").textContent = "Edit report";
   show("review-panel");
 }
 
@@ -186,6 +192,7 @@ $("reject-btn").addEventListener("click", () => submitReview({ action: "reject" 
 $("edit-btn").addEventListener("click", () => {
   if (!editing) {
     editing = true;
+    hide("review-report");
     show("edit-area");
     $("edit-btn").textContent = "Submit edited report";
   } else {
@@ -201,10 +208,28 @@ async function submitReview(decision) {
   if (resp.status === 202) {
     hide("review-panel");
     $("job-status").textContent = "running";
+    $("phase-label").textContent = "Finishing up…";
+    $("spinner").classList.remove("done");
+    startPhaseTimer();
   } else {
     alert(`Review failed (${resp.status})`);
   }
 }
+
+$("pdf-btn").addEventListener("click", async () => {
+  const resp = await api(`/api/v1/research/${currentJob.id}/report.pdf`);
+  if (!resp.ok) {
+    alert(`PDF unavailable (${resp.status})`);
+    return;
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `research-${currentJob.id.slice(0, 8)}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
 
 function renderMarkdown(md) {
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

@@ -68,11 +68,24 @@ button.danger { background: transparent; color: var(--danger); border-color: var
 .hint { color: var(--muted); font-size: 0.8rem; }
 .error { color: var(--danger); font-size: 0.85rem; }
 
-.event-log { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
-.event-log li { padding: 0.3rem 0; border-bottom: 1px dashed var(--border); }
-.event-log .node { color: var(--accent); font-family: ui-monospace, monospace; }
-.event-log .count { color: var(--accent); font-weight: 600; margin-left: 0.35rem; }
-.event-log .time { color: var(--muted); margin-left: 0.5rem; }
+.spinner-row { display: flex; align-items: center; gap: 1rem; }
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.spinner.done { animation: none; border-top-color: var(--border); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-text p { margin: 0.25rem 0 0; }
+#phase-label { font-size: 0.95rem; }
+#elapsed { font-variant-numeric: tabular-nums; }
+
+.result-header { display: flex; align-items: center; justify-content: space-between; }
+.result-header h2 { margin: 0; }
 
 .report-preview {
   max-height: 20rem;
@@ -85,7 +98,7 @@ button.danger { background: transparent; color: var(--danger); border-color: var
   font-size: 0.85rem;
 }
 .review-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
-#edit-area { width: 100%; margin-top: 0.75rem; }
+#edit-area { width: 100%; margin-top: 0.75rem; font-family: ui-monospace, monospace; font-size: 0.85rem; }
 
 .report { line-height: 1.6; }
 .report h1, .report h2 { color: #fff; }

@@ -37,24 +37,33 @@
   </section>
 
   <section id="progress-panel" class="panel hidden">
-    <h2>Progress <span id="job-status" class="badge"></span></h2>
-    <ul id="event-log" class="event-log"></ul>
+    <div class="spinner-row">
+      <div id="spinner" class="spinner"></div>
+      <div class="spinner-text">
+        <span id="job-status" class="badge">queued</span>
+        <p id="phase-label">Starting…</p>
+        <p id="elapsed" class="hint"></p>
+      </div>
+    </div>
   </section>
 
   <section id="review-panel" class="panel hidden">
     <h2>Human review required</h2>
     <p id="review-meta" class="hint"></p>
-    <pre id="review-report" class="report-preview"></pre>
+    <div id="review-report" class="report report-preview"></div>
+    <textarea id="edit-area" class="hidden" rows="14"></textarea>
     <div class="review-actions">
       <button id="approve-btn" class="primary">Approve</button>
-      <button id="edit-btn">Edit &amp; approve</button>
+      <button id="edit-btn">Edit report</button>
       <button id="reject-btn" class="danger">Reject</button>
     </div>
-    <textarea id="edit-area" class="hidden" rows="12"></textarea>
   </section>
 
   <section id="result-panel" class="panel hidden">
-    <h2>Report</h2>
+    <div class="result-header">
+      <h2>Report</h2>
+      <button id="pdf-btn">Download PDF</button>
+    </div>
     <div id="report-body" class="report"></div>
     <h3>Sources</h3>
     <ul id="source-list"></ul>
