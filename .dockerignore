@@ -14,5 +14,7 @@ PLAN.md
 PLAN-2.md
 AGENTS.md
 README-example*.md
+README-agentic-api.md
+README-agentic-rag.md
 tests/
 evaluation/
