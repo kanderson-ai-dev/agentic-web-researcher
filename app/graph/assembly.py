@@ -17,6 +17,7 @@ from app.graph.deps import GraphDeps
 from app.graph.nodes import (
     make_critic,
     make_document_worker,
+    make_human_review,
     make_input_guardrail,
     make_output_guardrail,
     make_planner,
@@ -114,6 +115,7 @@ def build_graph(
     builder.add_node("replan", RunnableLambda(make_replan(deps)))
     builder.add_node("writer", RunnableLambda(make_writer(deps)))
     builder.add_node("output_guardrail", RunnableLambda(make_output_guardrail(deps)))
+    builder.add_node("human_review", RunnableLambda(make_human_review(deps)))
     builder.add_node("report_assembler", RunnableLambda(make_report_assembler(deps)))
 
     builder.add_edge(START, "input_guardrail")
@@ -143,7 +145,8 @@ def build_graph(
         "replan", _route_to_search, ["search_worker", "to_critic"]
     )
     builder.add_edge("writer", "output_guardrail")
-    builder.add_edge("output_guardrail", "report_assembler")
+    builder.add_edge("output_guardrail", "human_review")
+    builder.add_edge("human_review", "report_assembler")
     builder.add_edge("report_assembler", END)
 
     return builder.compile(checkpointer=checkpointer)

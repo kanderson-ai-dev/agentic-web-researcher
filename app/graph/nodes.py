@@ -8,6 +8,8 @@ channels merge parallel worker output automatically.
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langgraph.types import interrupt
+
 from app.core.schemas import SubQuestion, SubQuestionStatus
 from app.graph.deps import GraphDeps
 from app.graph.guardrails import (
@@ -127,9 +129,17 @@ def make_critic(deps: GraphDeps) -> StateNode:
             sub_questions=state.get("sub_questions", []),
             sources=state.get("sources", []),
         )
+        rounds = state.get("critic_rounds", 0) + 1
+        # Escalate to the human gate when the critic still wants more research
+        # but the bounded loop has run out of rounds.
+        escalated = bool(
+            verdict.needs_more_research
+            and rounds >= state.get("max_critic_rounds", 1)
+        )
         return {
             "critic_verdict": verdict,
-            "critic_rounds": state.get("critic_rounds", 0) + 1,
+            "critic_rounds": rounds,
+            "escalated": escalated,
         }
 
     return critic
@@ -193,6 +203,48 @@ def make_output_guardrail(_deps: GraphDeps) -> StateNode:
         return update
 
     return output_guardrail
+
+
+def make_human_review(deps: GraphDeps) -> StateNode:
+    """HITL gate: pause for a human decision before the report is published.
+
+    Only active when ``deps.require_human_review`` is set (a checkpointer is
+    mandatory for ``interrupt``); otherwise the node is a passthrough so
+    offline/test graphs without checkpointing still run to completion.
+
+    Resume payload (``Command(resume=...)``): ``{"action": ..., "report": ...}``.
+    """
+
+    async def human_review(state: ResearchState) -> dict[str, Any]:
+        if not deps.require_human_review:
+            return {"human_decision": "auto"}
+        verdict = state.get("critic_verdict")
+        decision = interrupt(
+            {
+                "job_id": state["job_id"],
+                "report": state.get("report"),
+                "citations": [
+                    c.model_dump(mode="json") for c in state.get("citations", [])
+                ],
+                "escalated": state.get("escalated", False),
+                "missing_aspects": (
+                    verdict.missing_aspects if verdict is not None else []
+                ),
+            }
+        )
+        if not isinstance(decision, dict):
+            return {"human_decision": "approve"}
+        action = decision.get("action", "approve")
+        if action == "reject":
+            return {
+                "report": "Report rejected by human reviewer.",
+                "human_decision": "reject",
+            }
+        if action == "edit" and isinstance(decision.get("report"), str):
+            return {"report": decision["report"], "human_decision": "edit"}
+        return {"human_decision": "approve"}
+
+    return human_review
 
 
 def make_report_assembler(_deps: GraphDeps) -> StateNode:

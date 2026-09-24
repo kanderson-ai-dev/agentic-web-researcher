@@ -57,4 +57,5 @@ def build_graph_deps(settings: Settings) -> GraphDeps:
         parse=parse,
         max_search_results=settings.max_search_results_per_question,
         max_sub_questions=settings.max_sub_questions,
+        require_human_review=True,
     )

@@ -26,3 +26,4 @@ class GraphDeps:
     parse: ParseFn
     max_search_results: int = 3
     max_sub_questions: int = 6
+    require_human_review: bool = False

@@ -46,6 +46,9 @@ class ResearchState(TypedDict, total=False):
     dropped_citations: int
     errors: Annotated[list[str], operator.add]
 
+    escalated: bool
+    human_decision: str | None
+
 
 class SearchTask(TypedDict):
     """Input slice sent to each ``search_worker`` branch."""
@@ -87,4 +90,6 @@ def initial_state(
         "citations": [],
         "dropped_citations": 0,
         "errors": [],
+        "escalated": False,
+        "human_decision": None,
     }

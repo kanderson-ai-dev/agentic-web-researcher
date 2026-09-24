@@ -111,9 +111,17 @@ class JobEvent(BaseModel):
 
     job_id: str
     node: str
-    status: Literal["started", "completed", "failed"]
+    status: Literal["started", "completed", "failed", "awaiting_review"]
     detail: str = ""
     ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ReviewDecision(BaseModel):
+    """Human reviewer decision for a job paused at the HITL gate."""
+
+    action: Literal["approve", "edit", "reject"]
+    report: str | None = Field(default=None, max_length=100_000)
+    notes: str = Field(default="", max_length=2_000)
 
 
 class ResearchJob(BaseModel):

@@ -6,11 +6,13 @@ the final :class:`ResearchJob` state.
 """
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.types import Command
 
 from app.core.schemas import JobEvent, JobStatus, ResearchJob
 from app.graph.assembly import build_graph
@@ -85,6 +87,25 @@ class JobRunner:
         state = initial_state(
             job.request, job_id=job.id, max_critic_rounds=self._max_critic_rounds
         )
+        await self._drive(job, state)
+
+    async def resume(self, job: ResearchJob, decision: dict[str, Any]) -> None:
+        """Resume a job paused at the HITL gate with the reviewer's decision."""
+        if self._checkpoint_db is None:
+            await self._finish(
+                job, JobStatus.FAILED, "resume unsupported: research job failed"
+            )
+            return
+        job.status = JobStatus.RUNNING
+        job.updated_at = datetime.now(UTC)
+        await self._store.upsert(job)
+        await self._publish(JobEvent(job_id=job.id, node=_JOB_NODE, status="started"))
+        await self._drive(job, Command(resume=decision))
+
+    async def _drive(self, job: ResearchJob, graph_input: Any) -> None:
+        """Stream the graph for ``graph_input`` and settle the job status."""
+        graph: Any = None
+        config: dict[str, Any] = {}
         try:
             if self._checkpoint_db is not None:
                 # Per-job thread_id: checkpoints persist every step for resume/HITL.
@@ -93,18 +114,23 @@ class JobRunner:
                     self._checkpoint_db
                 ) as checkpointer:
                     graph = build_graph(self._deps, checkpointer=checkpointer)
-                    final = await self._execute(
-                        job, state, graph, {"configurable": {"thread_id": job.id}}
-                    )
+                    config = {"configurable": {"thread_id": job.id}}
+                    final = await self._execute(job, graph_input, graph, config)
+                    interrupt_payload = await self._pending_interrupt(graph, config)
             else:
                 assert self._graph is not None
-                final = await self._execute(job, state, self._graph, {})
+                graph = self._graph
+                final = await self._execute(job, graph_input, graph, config)
+                interrupt_payload = None
         except Exception as exc:  # noqa: BLE001 — a failed job must not crash the app
             await self._finish(
                 job, JobStatus.FAILED, f"{type(exc).__name__}: research job failed"
             )
             return
 
+        if interrupt_payload is not None:
+            await self._await_review(job, interrupt_payload)
+            return
         if final is None:
             await self._finish(job, JobStatus.FAILED, "empty run: research job failed")
             return
@@ -113,6 +139,37 @@ class JobRunner:
         job.sources = final.get("sources", [])
         job.sub_questions = final.get("sub_questions", [])
         await self._finish(job, JobStatus.COMPLETED)
+
+    @staticmethod
+    async def _pending_interrupt(graph: Any, config: dict[str, Any]) -> Any | None:
+        """Return the interrupt payload when the run paused inside the graph."""
+        snapshot = await graph.aget_state(config)
+        if not snapshot.next:
+            return None
+        payloads = [
+            interrupt.value
+            for task in snapshot.tasks
+            for interrupt in task.interrupts
+        ]
+        return payloads[0] if payloads else {}
+
+    async def _await_review(self, job: ResearchJob, payload: Any) -> None:
+        """Park the job at AWAITING_REVIEW and notify SSE subscribers."""
+        job.status = JobStatus.AWAITING_REVIEW
+        job.updated_at = datetime.now(UTC)
+        try:
+            detail = json.dumps(payload, default=str)
+        except TypeError:
+            detail = "{}"
+        await self._store.upsert(job)
+        await self._publish(
+            JobEvent(
+                job_id=job.id,
+                node=_JOB_NODE,
+                status="awaiting_review",
+                detail=detail,
+            )
+        )
 
     async def _execute(
         self,

@@ -8,7 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.rate_limit import rate_limiter
-from app.core.schemas import JobEvent, JobStatus, ResearchJob, ResearchRequest
+from app.core.schemas import (
+    JobEvent,
+    JobStatus,
+    ResearchJob,
+    ResearchRequest,
+    ReviewDecision,
+)
 from app.core.security import require_auth
 from app.graph.guardrails import screen_topic
 from app.services.job_runner import JobRunner
@@ -115,3 +121,24 @@ async def stream_research(job_id: str, request: Request) -> StreamingResponse:
 async def list_research(request: Request) -> list[ResearchJob]:
     """List recent research jobs (newest first)."""
     return await _store(request).list_recent()
+
+
+@router.post("/{job_id}/review", response_model=ResearchJob, status_code=202)
+async def review_research(
+    job_id: str, decision: ReviewDecision, request: Request
+) -> ResearchJob:
+    """Submit the human decision for a job paused at the HITL gate."""
+    if decision.action == "edit" and not decision.report:
+        raise HTTPException(
+            status_code=422, detail="report is required when action is 'edit'"
+        )
+    store = _store(request)
+    job = await store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.status is not JobStatus.AWAITING_REVIEW:
+        raise HTTPException(
+            status_code=409, detail="job is not awaiting review"
+        )
+    asyncio.create_task(_runner(request).resume(job, decision.model_dump()))
+    return job

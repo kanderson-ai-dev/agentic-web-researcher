@@ -312,3 +312,105 @@ def test_security_headers_present(api_client: TestClient) -> None:
     assert resp.headers["X-Frame-Options"] == "DENY"
     assert resp.headers["Referrer-Policy"] == "no-referrer"
     assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
+
+
+# --- Phase 7: human-in-the-loop review gate ---------------------------------
+
+
+@pytest.fixture
+def hitl_client(tmp_path, stub_deps: GraphDeps) -> Iterator[TestClient]:
+    """Authenticated client whose deps enable the human-review gate."""
+    deps = dataclasses.replace(stub_deps, require_human_review=True)
+    app = create_app(settings=_settings(tmp_path), deps=deps)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/v1/auth/login", json={"username": "admin", "password": "test-pass"}
+        )
+        client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
+        yield client
+
+
+def _wait_for_status(
+    client: TestClient, job_id: str, status: str, timeout: float = 10.0
+) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = client.get(f"/api/v1/research/{job_id}").json()
+        if job["status"] == status or job["status"] == "failed":
+            return job
+        time.sleep(0.05)
+    raise AssertionError(f"job {job_id} never reached {status}")
+
+
+def _submit_and_await_review(client: TestClient) -> dict:
+    submitted = _submit(client)
+    job = _wait_for_status(client, submitted["id"], "awaiting_review")
+    assert job["status"] == "awaiting_review"
+    return job
+
+
+def test_hitl_approve_completes_job(hitl_client: TestClient) -> None:
+    job = _submit_and_await_review(hitl_client)
+
+    resp = hitl_client.post(
+        f"/api/v1/research/{job['id']}/review", json={"action": "approve"}
+    )
+    assert resp.status_code == 202
+
+    done = _wait_for_completion(hitl_client, job["id"])
+    assert done["status"] == "completed"
+    assert done["report"]
+
+
+def test_hitl_edit_replaces_report(hitl_client: TestClient) -> None:
+    job = _submit_and_await_review(hitl_client)
+
+    hitl_client.post(
+        f"/api/v1/research/{job['id']}/review",
+        json={"action": "edit", "report": "Human-curated report body."},
+    )
+    done = _wait_for_completion(hitl_client, job["id"])
+    assert done["status"] == "completed"
+    assert done["report"] == "Human-curated report body."
+
+
+def test_hitl_reject_marks_report_rejected(hitl_client: TestClient) -> None:
+    job = _submit_and_await_review(hitl_client)
+
+    hitl_client.post(
+        f"/api/v1/research/{job['id']}/review", json={"action": "reject"}
+    )
+    done = _wait_for_completion(hitl_client, job["id"])
+    assert done["status"] == "completed"
+    assert done["report"] == "Report rejected by human reviewer."
+
+
+def test_review_requires_awaiting_status(hitl_client: TestClient) -> None:
+    submitted = _submit(hitl_client)
+    resp = hitl_client.post(
+        f"/api/v1/research/{submitted['id']}/review", json={"action": "approve"}
+    )
+    assert resp.status_code == 409
+    _submit_and_await_review(hitl_client)  # drain the job to a stable state
+
+
+def test_review_unknown_job_404(hitl_client: TestClient) -> None:
+    resp = hitl_client.post(
+        "/api/v1/research/nope/review", json={"action": "approve"}
+    )
+    assert resp.status_code == 404
+
+
+def test_review_edit_requires_report(hitl_client: TestClient) -> None:
+    job = _submit_and_await_review(hitl_client)
+    resp = hitl_client.post(
+        f"/api/v1/research/{job['id']}/review", json={"action": "edit"}
+    )
+    assert resp.status_code == 422
+
+
+def test_review_requires_auth(bare_client: TestClient) -> None:
+    resp = bare_client.post(
+        "/api/v1/research/x/review", json={"action": "approve"}
+    )
+    assert resp.status_code == 401
