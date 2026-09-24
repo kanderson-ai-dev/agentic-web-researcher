@@ -7,7 +7,10 @@ the final :class:`ResearchJob` state.
 
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
+
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.core.schemas import JobEvent, JobStatus, ResearchJob
 from app.graph.assembly import build_graph
@@ -22,11 +25,18 @@ class JobRunner:
     """Runs research graphs in the background and fans out progress events."""
 
     def __init__(
-        self, deps: GraphDeps, store: JobStore, *, max_critic_rounds: int = 2
+        self,
+        deps: GraphDeps,
+        store: JobStore,
+        *,
+        max_critic_rounds: int = 2,
+        checkpoint_db: str | None = None,
     ) -> None:
-        self._graph = build_graph(deps)
+        self._deps = deps
+        self._graph = build_graph(deps) if checkpoint_db is None else None
         self._store = store
         self._max_critic_rounds = max_critic_rounds
+        self._checkpoint_db = checkpoint_db
         self._listeners: dict[str, set[asyncio.Queue[JobEvent]]] = {}
 
     # -- subscription (SSE) --------------------------------------------------
@@ -75,27 +85,52 @@ class JobRunner:
         state = initial_state(
             job.request, job_id=job.id, max_critic_rounds=self._max_critic_rounds
         )
-        final: dict[str, Any] | None = None
         try:
-            async for mode, chunk in self._graph.astream(
-                state, stream_mode=["updates", "values"]
-            ):
-                if mode == "updates":
-                    for node_name in chunk:
-                        await self._publish(
-                            JobEvent(job_id=job.id, node=node_name, status="completed")
-                        )
-                else:
-                    final = cast(dict[str, Any], chunk)
+            if self._checkpoint_db is not None:
+                # Per-job thread_id: checkpoints persist every step for resume/HITL.
+                Path(self._checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
+                async with AsyncSqliteSaver.from_conn_string(
+                    self._checkpoint_db
+                ) as checkpointer:
+                    graph = build_graph(self._deps, checkpointer=checkpointer)
+                    final = await self._execute(
+                        job, state, graph, {"configurable": {"thread_id": job.id}}
+                    )
+            else:
+                assert self._graph is not None
+                final = await self._execute(job, state, self._graph, {})
         except Exception as exc:  # noqa: BLE001 — a failed job must not crash the app
             await self._finish(
                 job, JobStatus.FAILED, f"{type(exc).__name__}: research job failed"
             )
             return
 
-        assert final is not None
+        if final is None:
+            await self._finish(job, JobStatus.FAILED, "empty run: research job failed")
+            return
         job.report = final.get("report")
         job.citations = final.get("citations", [])
         job.sources = final.get("sources", [])
         job.sub_questions = final.get("sub_questions", [])
         await self._finish(job, JobStatus.COMPLETED)
+
+    async def _execute(
+        self,
+        job: ResearchJob,
+        state: Any,
+        graph: Any,
+        config: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Stream the graph, publishing per-node events; return the final state."""
+        final: dict[str, Any] | None = None
+        async for mode, chunk in graph.astream(
+            state, stream_mode=["updates", "values"], config=config
+        ):
+            if mode == "updates":
+                for node_name in chunk:
+                    await self._publish(
+                        JobEvent(job_id=job.id, node=node_name, status="completed")
+                    )
+            else:
+                final = cast(dict[str, Any], chunk)
+        return final

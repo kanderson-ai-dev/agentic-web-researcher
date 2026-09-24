@@ -144,6 +144,25 @@ async def test_runner_marks_failed_jobs(tmp_path, stub_deps: GraphDeps) -> None:
     assert "RuntimeError" in stored.error
 
 
+async def test_runner_with_sqlite_checkpointer(tmp_path, stub_deps: GraphDeps) -> None:
+    store = JobStore(f"sqlite:///{tmp_path}/jobs.sqlite")
+    await store.init()
+    checkpoint_db = str(tmp_path / "checkpoints.sqlite")
+    runner = JobRunner(stub_deps, store, checkpoint_db=checkpoint_db)
+
+    job = ResearchJob(
+        id="job-ckpt",
+        request=ResearchRequest(topic="impact of the EU AI Act on startups"),
+    )
+    await runner.run(job)
+
+    stored = await store.get(job.id)
+    assert stored is not None
+    assert stored.status is JobStatus.COMPLETED
+    assert stored.report
+    assert (tmp_path / "checkpoints.sqlite").exists()
+
+
 async def test_job_store_round_trip(tmp_path, research_request: ResearchRequest) -> None:
     store = JobStore(f"sqlite:///{tmp_path}/store.sqlite")
     await store.init()

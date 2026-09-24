@@ -32,6 +32,7 @@ def create_app(
             deps or build_graph_deps(resolved_settings),
             store,
             max_critic_rounds=resolved_settings.max_critic_rounds,
+            checkpoint_db=resolved_settings.checkpoint_db_path,
         )
         yield
 

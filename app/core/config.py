@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     # Persistence
     database_url: str = "sqlite:///./data/jobs.sqlite"
+    checkpoint_db_path: str = "data/checkpoints.sqlite"
 
     @field_validator(*_SECRET_FIELDS, mode="before")
     @classmethod
