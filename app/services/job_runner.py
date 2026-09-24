@@ -161,8 +161,10 @@ class JobRunner:
             )
             return
 
-        job.cost_usd = tracker.cost_usd(self._llm_model)
-        job.timings["total_seconds"] = round(time.monotonic() - started, 3)
+        job.cost_usd = round(job.cost_usd + tracker.cost_usd(self._llm_model), 6)
+        job.timings["total_seconds"] = round(
+            job.timings.get("total_seconds", 0.0) + (time.monotonic() - started), 3
+        )
         reset_tracker(token)
         if interrupt_payload is not None:
             await self._await_review(job, interrupt_payload)
