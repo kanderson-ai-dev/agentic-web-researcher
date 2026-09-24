@@ -39,7 +39,10 @@ def _route_to_search(state: ResearchState) -> list[Send] | str:
     silently ending on an empty fan-out.
     """
     sends = [
-        Send("search_worker", {"sub_question": sq})
+        Send(
+            "search_worker",
+            {"sub_question": sq, "depth": state["request"].depth},
+        )
         for sq in state.get("pending_questions", [])
     ]
     return sends or "to_critic"

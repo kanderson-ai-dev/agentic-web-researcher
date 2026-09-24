@@ -54,6 +54,7 @@ class SearchTask(TypedDict):
     """Input slice sent to each ``search_worker`` branch."""
 
     sub_question: SubQuestion
+    depth: str
 
 
 class ScrapeTask(TypedDict):

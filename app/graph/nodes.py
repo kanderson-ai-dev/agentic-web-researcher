@@ -21,6 +21,10 @@ from app.graph.state import ParseTask, ResearchState, ScrapeTask, SearchTask
 
 _DEPTH_TARGETS = {"quick": 3, "standard": 5, "deep": 8}
 
+# Per-depth cap on search results per sub-question — "quick" trades breadth
+# for latency: fewer sources means fewer serialized scrape rounds.
+_DEPTH_SEARCH_CAP = {"quick": 2}
+
 StateNode = Callable[[ResearchState], Awaitable[dict[str, Any]]]
 SearchNode = Callable[[SearchTask], Awaitable[dict[str, Any]]]
 ScrapeNode = Callable[[ScrapeTask], Awaitable[dict[str, Any]]]
@@ -75,7 +79,11 @@ def make_search_worker(deps: GraphDeps) -> SearchNode:
             results = await deps.search(sub_question)
         except Exception as exc:  # noqa: BLE001 — record and continue
             return {"errors": [f"search failed for {sub_question.id}: {exc}"]}
-        capped = results[: deps.max_search_results]
+        cap = min(
+            _DEPTH_SEARCH_CAP.get(task.get("depth", ""), deps.max_search_results),
+            deps.max_search_results,
+        )
+        capped = results[:cap]
         for result in capped:
             result.sub_question_id = sub_question.id
         return {"search_results": capped}

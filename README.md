@@ -73,6 +73,8 @@ is reproducible with `uv run python -m evaluation.run_eval`.
 
 ## 🏗️ Architecture
 
+![Compiled LangGraph topology](docs/architecture-graph.png)
+
 ```
             ┌──────────────┐
    topic ──▶│ input guardrail│  reject hostile/malformed topics before any LLM spend
@@ -240,13 +242,7 @@ curl -s -o report.pdf http://localhost:8000/api/v1/research/<job_id>/report.pdf
 Every run produces a full graph trace — node-level latency, token counts and
 cost per agent role:
 
-![Run overview: 17.9s, 6.6K tokens, $0.0015](docs/langsmith-trace-overview.png)
-
-![Parallel fan-out: one search worker per sub-question](docs/langsmith-parallel-workers.png)
-
-![LLM roles: critic grades coverage, writer synthesizes the report](docs/langsmith-critic-writer.png)
-
-![Output guardrail verifies citations, then the run interrupts for human review](docs/langsmith-guardrails-hitl.png)
+![LangSmith trace of a real research run](docs/langsmith-trace.png)
 
 ---
 

@@ -86,22 +86,27 @@ class ScraperClient:
         self._browser = browser
         self._store = store or DocumentStore()
         self._robots: dict[str, RobotFileParser] = {}
-        self._last_request_at = 0.0
+        self._last_request_at: dict[str, float] = {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     # -- politeness ---------------------------------------------------------
 
-    async def _throttle(self) -> None:
-        elapsed = asyncio.get_event_loop().time() - self._last_request_at
+    async def _throttle(self, url: str) -> None:
+        """Enforce ``delay_seconds`` *per origin* — parallel branches hitting
+        different domains proceed concurrently while repeated hits to the same
+        host stay polite."""
+        origin = self._origin(url)
+        elapsed = asyncio.get_event_loop().time() - self._last_request_at.get(origin, 0.0)
         if elapsed < self._delay:
             await asyncio.sleep(self._delay - elapsed)
-        self._last_request_at = asyncio.get_event_loop().time()
+        self._last_request_at[origin] = asyncio.get_event_loop().time()
 
     async def _is_allowed_by_robots(self, url: str) -> bool:
         origin = self._origin(url)
         if origin not in self._robots:
+            await self._throttle(url)  # the robots.txt fetch is also a request
             parser = RobotFileParser()
             try:
                 response = await self._client.get(f"{origin}/robots.txt")
@@ -139,7 +144,7 @@ class ScraperClient:
         if not await self._is_allowed_by_robots(url):
             return None
 
-        await self._throttle()
+        await self._throttle(url)
         try:
             response = await self._get(url)
         except httpx.HTTPError:
