@@ -7,20 +7,26 @@ the final :class:`ResearchJob` state.
 
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+import structlog.contextvars
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 
+from app.core.logging import get_logger
+from app.core.metrics import JOB_COST, RESEARCH_DURATION, RESEARCH_JOBS
 from app.core.schemas import JobEvent, JobStatus, ResearchJob
 from app.graph.assembly import build_graph
 from app.graph.deps import GraphDeps
 from app.graph.state import initial_state
 from app.services.job_store import JobStore
+from app.services.usage import UsageTracker, reset_tracker, set_tracker
 
 _JOB_NODE = "__job__"
+_log = get_logger(__name__)
 
 
 class JobRunner:
@@ -33,12 +39,14 @@ class JobRunner:
         *,
         max_critic_rounds: int = 2,
         checkpoint_db: str | None = None,
+        llm_model: str = "gpt-4o-mini",
     ) -> None:
         self._deps = deps
         self._graph = build_graph(deps) if checkpoint_db is None else None
         self._store = store
         self._max_critic_rounds = max_critic_rounds
         self._checkpoint_db = checkpoint_db
+        self._llm_model = llm_model
         self._listeners: dict[str, set[asyncio.Queue[JobEvent]]] = {}
 
     # -- subscription (SSE) --------------------------------------------------
@@ -62,12 +70,27 @@ class JobRunner:
     # -- execution -----------------------------------------------------------
 
     async def _finish(
-        self, job: ResearchJob, status: JobStatus, error: str | None = None
+        self,
+        job: ResearchJob,
+        status: JobStatus,
+        error: str | None = None,
+        *,
+        elapsed: float | None = None,
     ) -> None:
         job.status = status
         job.error = error
         job.updated_at = datetime.now(UTC)
         await self._store.upsert(job)
+        RESEARCH_JOBS.labels(status=status.value).inc()
+        if elapsed is not None:
+            RESEARCH_DURATION.observe(elapsed)
+        JOB_COST.observe(job.cost_usd)
+        _log.info(
+            "job.finished",
+            status=status.value,
+            cost_usd=job.cost_usd,
+            elapsed_seconds=elapsed,
+        )
         await self._publish(
             JobEvent(
                 job_id=job.id,
@@ -104,6 +127,11 @@ class JobRunner:
 
     async def _drive(self, job: ResearchJob, graph_input: Any) -> None:
         """Stream the graph for ``graph_input`` and settle the job status."""
+        started = time.monotonic()
+        tracker = UsageTracker()
+        token = set_tracker(tracker)
+        structlog.contextvars.bind_contextvars(job_id=job.id)
+        _log.info("job.drive_started")
         graph: Any = None
         config: dict[str, Any] = {}
         try:
@@ -123,22 +151,37 @@ class JobRunner:
                 final = await self._execute(job, graph_input, graph, config)
                 interrupt_payload = None
         except Exception as exc:  # noqa: BLE001 — a failed job must not crash the app
+            reset_tracker(token)
+            _log.warning("job.failed", error=type(exc).__name__)
             await self._finish(
-                job, JobStatus.FAILED, f"{type(exc).__name__}: research job failed"
+                job,
+                JobStatus.FAILED,
+                f"{type(exc).__name__}: research job failed",
+                elapsed=time.monotonic() - started,
             )
             return
 
+        job.cost_usd = tracker.cost_usd(self._llm_model)
+        job.timings["total_seconds"] = round(time.monotonic() - started, 3)
+        reset_tracker(token)
         if interrupt_payload is not None:
             await self._await_review(job, interrupt_payload)
             return
         if final is None:
-            await self._finish(job, JobStatus.FAILED, "empty run: research job failed")
+            await self._finish(
+                job,
+                JobStatus.FAILED,
+                "empty run: research job failed",
+                elapsed=job.timings["total_seconds"],
+            )
             return
         job.report = final.get("report")
         job.citations = final.get("citations", [])
         job.sources = final.get("sources", [])
         job.sub_questions = final.get("sub_questions", [])
-        await self._finish(job, JobStatus.COMPLETED)
+        await self._finish(
+            job, JobStatus.COMPLETED, elapsed=job.timings["total_seconds"]
+        )
 
     @staticmethod
     async def _pending_interrupt(graph: Any, config: dict[str, Any]) -> Any | None:

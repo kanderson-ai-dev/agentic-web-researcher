@@ -9,7 +9,7 @@ Two implementations:
 """
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from app.core.config import Settings
 from app.core.schemas import Citation, CriticVerdict, Source, SubQuestion
+from app.services.usage import record_usage
 
 
 class LLMClient(Protocol):
@@ -63,6 +64,12 @@ class _ReportOutput(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
 
 
+def _usage_from_raw(raw: Any) -> tuple[int, int]:
+    """Extract (input, output) token counts from a raw AIMessage."""
+    metadata = getattr(raw, "usage_metadata", None) or {}
+    return int(metadata.get("input_tokens", 0)), int(metadata.get("output_tokens", 0))
+
+
 class OpenAILLMClient:
     """Real LLM client backed by OpenAI chat models with structured outputs."""
 
@@ -72,7 +79,7 @@ class OpenAILLMClient:
     async def plan(
         self, *, topic: str, max_questions: int, language: str
     ) -> list[SubQuestion]:
-        planner = self._chat.with_structured_output(_PlanOutput)
+        planner = self._chat.with_structured_output(_PlanOutput, include_raw=True)
         result = await planner.ainvoke(
             [
                 SystemMessage(
@@ -85,10 +92,11 @@ class OpenAILLMClient:
                 HumanMessage(content=topic),
             ]
         )
-        assert isinstance(result, _PlanOutput)
+        record_usage("planner", *_usage_from_raw(result["raw"]))
+        parsed = cast(_PlanOutput, result["parsed"])
         return [
             SubQuestion(id=f"q{i + 1}", question=q)
-            for i, q in enumerate(result.questions[:max_questions])
+            for i, q in enumerate(parsed.questions[:max_questions])
         ]
 
     async def critique(
@@ -98,7 +106,7 @@ class OpenAILLMClient:
         sub_questions: Sequence[SubQuestion],
         sources: Sequence[Source],
     ) -> CriticVerdict:
-        critic = self._chat.with_structured_output(CriticVerdict)
+        critic = self._chat.with_structured_output(CriticVerdict, include_raw=True)
         evidence = "\n\n".join(
             f"[{s.id}] {s.title or s.url}\n{s.extracted_text[:1500]}" for s in sources
         )
@@ -122,8 +130,8 @@ class OpenAILLMClient:
                 ),
             ]
         )
-        assert isinstance(result, CriticVerdict)
-        return result
+        record_usage("critic", *_usage_from_raw(result["raw"]))
+        return cast(CriticVerdict, result["parsed"])
 
     async def write(
         self,
@@ -133,7 +141,7 @@ class OpenAILLMClient:
         sources: Sequence[Source],
         language: str,
     ) -> tuple[str, list[Citation]]:
-        writer = self._chat.with_structured_output(_ReportOutput)
+        writer = self._chat.with_structured_output(_ReportOutput, include_raw=True)
         evidence = "\n\n".join(
             f"[{s.id}] {s.title or s.url} ({s.url})\n{s.extracted_text[:2000]}"
             for s in sources
@@ -158,8 +166,9 @@ class OpenAILLMClient:
                 ),
             ]
         )
-        assert isinstance(result, _ReportOutput)
-        return result.report, result.citations
+        record_usage("writer", *_usage_from_raw(result["raw"]))
+        parsed = cast(_ReportOutput, result["parsed"])
+        return parsed.report, parsed.citations
 
 
 class StubLLMClient:
@@ -176,6 +185,7 @@ class StubLLMClient:
         self, *, topic: str, max_questions: int, language: str
     ) -> list[SubQuestion]:
         del language
+        record_usage("planner", 400, 150)
         count = min(3, max_questions)
         return [
             SubQuestion(id=f"q{i + 1}", question=f"{topic} — aspect {i + 1}")
@@ -190,6 +200,7 @@ class StubLLMClient:
         sources: Sequence[Source],
     ) -> CriticVerdict:
         del topic, sub_questions
+        record_usage("critic", 800, 200)
         if self.force_needs_more:
             return CriticVerdict(
                 coverage_score=0.4,
@@ -216,6 +227,7 @@ class StubLLMClient:
         language: str,
     ) -> tuple[str, list[Citation]]:
         del language
+        record_usage("writer", 1200, 400)
         lines = [f"# Research report: {topic}", ""]
         citations: list[Citation] = []
         if not sub_questions:

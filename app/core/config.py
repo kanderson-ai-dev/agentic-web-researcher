@@ -15,6 +15,7 @@ _SECRET_FIELDS = (
     "search_api_key",
     "langchain_api_key",
     "jwt_secret_key",
+    "admin_password",
 )
 
 

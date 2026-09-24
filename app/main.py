@@ -1,17 +1,29 @@
 """FastAPI application entrypoint for the Autonomous Web Research Agent."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.research import router as research_router
 from app.core.config import Settings, get_settings
+from app.core.logging import configure_logging
 from app.graph.deps import GraphDeps
 from app.services.factory import build_graph_deps
 from app.services.job_runner import JobRunner
 from app.services.job_store import JobStore
+
+
+def _configure_langsmith(settings: Settings) -> None:
+    """Export LangSmith env vars so LangGraph traces runs automatically."""
+    if settings.langchain_api_key is None or not settings.langchain_tracing_v2:
+        return
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key.get_secret_value()
+    os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
 
 
 def create_app(
@@ -22,11 +34,13 @@ def create_app(
     ``settings``/``deps`` are injectable so tests can run fully offline with
     deterministic doubles and a temporary database.
     """
+    configure_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         resolved_settings = settings or get_settings()
         app.state.settings = resolved_settings
+        _configure_langsmith(resolved_settings)
         store = JobStore(resolved_settings.database_url)
         await store.init()
         app.state.job_store = store
@@ -35,6 +49,7 @@ def create_app(
             store,
             max_critic_rounds=resolved_settings.max_critic_rounds,
             checkpoint_db=resolved_settings.checkpoint_db_path,
+            llm_model=resolved_settings.llm_model,
         )
         yield
 
@@ -49,6 +64,9 @@ def create_app(
     )
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(research_router, prefix="/api/v1")
+
+    # HTTP metrics + /metrics exposition (domain metrics live in core/metrics).
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
