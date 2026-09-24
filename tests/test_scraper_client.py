@@ -3,6 +3,7 @@
 import base64
 
 import httpx
+import pytest
 import respx
 
 from app.services.scraper_client import ScraperClient
@@ -143,3 +144,16 @@ async def test_fetch_returns_none_when_no_browser_and_empty_body() -> None:
         scraper = _client()
         assert await scraper.fetch(f"{ORIGIN}/empty") is None
         await scraper.aclose()
+
+
+# --- Phase 11: SSRF scheme allowlist -----------------------------------------
+
+@pytest.mark.parametrize(
+    "url",
+    ["file:///etc/passwd", "ftp://example.com/x", "gopher://x", "javascript:alert(1)", ""],
+)
+async def test_fetch_rejects_non_http_schemes(url: str) -> None:
+    scraper = _client()
+    with respx.mock(assert_all_called=False):
+        assert await scraper.fetch(url) is None
+    await scraper.aclose()

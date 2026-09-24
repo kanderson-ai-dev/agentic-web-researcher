@@ -128,8 +128,12 @@ class ScraperClient:
     async def _get(self, url: str) -> httpx.Response:
         return await self._client.get(url, headers={"User-Agent": self._user_agent})
 
+    _ALLOWED_SCHEMES = {"http", "https"}
+
     async def fetch(self, url: str, *, sub_question_id: str = "unassigned") -> RawDocument | None:
         """Fetch a URL into a RawDocument, or None when skipped/failed."""
+        if urlparse(url).scheme not in self._ALLOWED_SCHEMES:
+            return None  # SSRF guard: only http(s) URLs may be fetched
         if not await self._is_allowed_by_robots(url):
             return None
 

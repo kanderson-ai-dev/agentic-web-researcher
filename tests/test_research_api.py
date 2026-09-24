@@ -414,3 +414,33 @@ def test_review_requires_auth(bare_client: TestClient) -> None:
         "/api/v1/research/x/review", json={"action": "approve"}
     )
     assert resp.status_code == 401
+
+
+# --- Phase 11: security review ----------------------------------------------
+
+async def test_failed_job_error_does_not_leak_internals(
+    tmp_path, stub_deps: GraphDeps
+) -> None:
+    class ExplodingPlanner(StubLLMClient):
+        async def plan(self, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("connection to sk-live-key-refused.internal:443 failed")
+
+    deps = dataclasses.replace(stub_deps, llm=ExplodingPlanner())
+    store = JobStore(f"sqlite:///{tmp_path}/leak.sqlite")
+    await store.init()
+    runner = JobRunner(deps, store)
+
+    job = ResearchJob(
+        id="job-leak",
+        request=ResearchRequest(topic="impact of the EU AI Act on startups"),
+    )
+    await runner.run(job)
+
+    stored = await store.get(job.id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error is not None
+    # Only the exception class name surfaces — never the internal message.
+    assert "sk-live-key-refused" not in stored.error
+    assert "internal" not in stored.error
+    assert stored.error == "RuntimeError: research job failed"
