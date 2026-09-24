@@ -1,6 +1,5 @@
 """Tests for the document parser (HTML + PDF, fixture-based, offline)."""
 
-import base64
 from pathlib import Path
 
 from app.core.schemas import RawDocument
@@ -9,11 +8,9 @@ from app.services.document_parser import parse_raw_document
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def _doc(content: str = "", content_type: str = "text/html", b64: str | None = None) -> RawDocument:
+def _doc(content_type: str = "text/html") -> RawDocument:
     return RawDocument(
         url="https://example.com/page",
-        content=content,
-        content_bytes_b64=b64,
         content_type=content_type,
         sub_question_id="q1",
     )
@@ -21,7 +18,7 @@ def _doc(content: str = "", content_type: str = "text/html", b64: str | None = N
 
 def test_parse_html_extracts_title_and_main_text() -> None:
     html = (FIXTURES / "sample_page.html").read_text(encoding="utf-8")
-    source = parse_raw_document(_doc(content=html))
+    source = parse_raw_document(_doc(), html.encode("utf-8"))
 
     assert source is not None
     assert source.title == "AI Adoption Report 2025"
@@ -38,35 +35,37 @@ def test_parse_html_extracts_title_and_main_text() -> None:
 
 
 def test_parse_html_returns_none_for_empty_text() -> None:
-    source = parse_raw_document(_doc(content="<html><body><script>x()</script></body></html>"))
+    source = parse_raw_document(
+        _doc(), b"<html><body><script>x()</script></body></html>"
+    )
     assert source is None
+
+
+def test_parse_missing_payload_returns_none() -> None:
+    """Unresolved content_ref (e.g. process restart) degrades to None."""
+    assert parse_raw_document(_doc(), None) is None
 
 
 def test_parse_pdf_extracts_text() -> None:
     pdf = (FIXTURES / "sample.pdf").read_bytes()
-    source = parse_raw_document(
-        _doc(
-            content_type="application/pdf",
-            b64=base64.b64encode(pdf).decode("ascii"),
-        )
-    )
+    source = parse_raw_document(_doc(content_type="application/pdf"), pdf)
 
     assert source is not None
     assert "market grew 27 percent" in source.extracted_text
 
 
 def test_parse_corrupt_pdf_returns_none() -> None:
-    source = parse_raw_document(
-        _doc(
-            content_type="application/pdf",
-            b64=base64.b64encode(b"not a pdf").decode("ascii"),
-        )
-    )
+    source = parse_raw_document(_doc(content_type="application/pdf"), b"not a pdf")
     assert source is None
 
 
-def test_parse_invalid_b64_returns_none() -> None:
-    source = parse_raw_document(
-        _doc(content_type="application/pdf", b64="!!!not-base64!!!")
-    )
-    assert source is None
+def test_document_store_roundtrip() -> None:
+    from app.services.document_store import DocumentStore
+
+    store = DocumentStore()
+    ref = store.put(b"<html>payload</html>")
+    assert ref.startswith("d-")
+    assert store.get(ref) == b"<html>payload</html>"
+    assert store.get("d-missing") is None
+    # same content -> same ref (content-addressed)
+    assert store.put(b"<html>payload</html>") == ref

@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.schemas import RawDocument, SearchResult, Source, SubQuestion
 from app.graph.deps import GraphDeps
 from app.services.document_parser import parse_raw_document
+from app.services.document_store import DocumentStore
 from app.services.llm_client import get_llm_client
 from app.services.scraper_client import ScraperClient
 from app.services.search_client import (
@@ -36,11 +37,13 @@ def build_graph_deps(settings: Settings) -> GraphDeps:
     else:
         search_client = NullSearchClient()
 
+    document_store = DocumentStore()
     scraper = ScraperClient(
         user_agent=settings.scrape_user_agent,
         delay_seconds=settings.scrape_delay_seconds,
         timeout_seconds=settings.scrape_timeout_seconds,
         max_bytes=settings.scrape_max_bytes,
+        store=document_store,
     )
 
     async def search(sub_question: SubQuestion) -> list[SearchResult]:
@@ -52,7 +55,9 @@ def build_graph_deps(settings: Settings) -> GraphDeps:
         return await scraper.fetch(result.url, sub_question_id=result.sub_question_id)
 
     async def parse(document: RawDocument) -> Source | None:
-        return parse_raw_document(document)
+        return parse_raw_document(
+            document, document_store.get(document.content_ref)
+        )
 
     return GraphDeps(
         llm=llm,

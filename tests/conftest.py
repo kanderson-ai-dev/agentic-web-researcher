@@ -43,7 +43,7 @@ def fake_scrape() -> ScrapeFn:
     async def _scrape(result: SearchResult) -> RawDocument | None:
         return RawDocument(
             url=result.url,
-            content=f"<html><body>Article body for {result.url}</body></html>",
+            content_ref="",
             content_type="text/html",
             status_code=200,
             sub_question_id=result.sub_question_id,
@@ -55,7 +55,7 @@ def fake_scrape() -> ScrapeFn:
 @pytest.fixture
 def fake_parse() -> ParseFn:
     async def _parse(document: RawDocument) -> Source | None:
-        digest = hashlib.sha256(document.content.encode()).hexdigest()[:12]
+        digest = hashlib.sha256(document.url.encode()).hexdigest()[:12]
         return Source(
             id=f"s-{digest}",
             url=document.url,

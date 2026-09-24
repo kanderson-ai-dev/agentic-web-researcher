@@ -1,11 +1,10 @@
 """Tests for the scraper client: robots.txt, UA, size/type limits, fallback."""
 
-import base64
-
 import httpx
 import pytest
 import respx
 
+from app.services.document_store import DocumentStore
 from app.services.scraper_client import ScraperClient
 
 ORIGIN = "https://example.com"
@@ -29,12 +28,14 @@ async def test_fetch_returns_document_and_sends_user_agent() -> None:
                 200, text=HTML, headers={"content-type": "text/html; charset=utf-8"}
             )
         )
-        scraper = _client()
+        store = DocumentStore()
+        scraper = _client(store=store)
         doc = await scraper.fetch(f"{ORIGIN}/page", sub_question_id="q1")
         await scraper.aclose()
 
     assert doc is not None
-    assert doc.content == HTML
+    assert store.get(doc.content_ref) == HTML.encode("utf-8")
+    assert doc.byte_size == len(HTML.encode("utf-8"))
     assert doc.sub_question_id == "q1"
     assert route.calls.last.request.headers["user-agent"] == "test-agent/1.0"
 
@@ -103,13 +104,13 @@ async def test_fetch_pdf_stores_bytes() -> None:
                 200, content=pdf_bytes, headers={"content-type": "application/pdf"}
             )
         )
-        scraper = _client()
+        store = DocumentStore()
+        scraper = _client(store=store)
         doc = await scraper.fetch(f"{ORIGIN}/doc.pdf")
         await scraper.aclose()
 
     assert doc is not None
-    assert doc.content_bytes_b64 is not None
-    assert base64.b64decode(doc.content_bytes_b64) == pdf_bytes
+    assert store.get(doc.content_ref) == pdf_bytes
     assert doc.content_type == "application/pdf"
 
 
@@ -125,12 +126,13 @@ async def test_fetch_falls_back_to_browser_on_empty_body() -> None:
         router.get(f"{ORIGIN}/js-app").mock(
             return_value=httpx.Response(200, text="", headers={"content-type": "text/html"})
         )
-        scraper = _client(browser=FakeBrowser())
+        store = DocumentStore()
+        scraper = _client(browser=FakeBrowser(), store=store)
         doc = await scraper.fetch(f"{ORIGIN}/js-app")
         await scraper.aclose()
 
     assert doc is not None
-    assert "rendered" in doc.content
+    assert b"rendered" in (store.get(doc.content_ref) or b"")
 
 
 async def test_fetch_returns_none_when_no_browser_and_empty_body() -> None:

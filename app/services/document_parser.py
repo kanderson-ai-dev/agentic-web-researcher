@@ -5,7 +5,6 @@ content is left untouched here; the ``document_worker`` node applies the
 sanitization guardrail afterwards.
 """
 
-import base64
 import hashlib
 import io
 import re
@@ -79,18 +78,18 @@ def parse_pdf(url: str, data: bytes, sub_question_id: str) -> Source | None:
     )
 
 
-def parse_raw_document(document: RawDocument) -> Source | None:
-    """Dispatch to the right parser based on content type / payload."""
-    if document.content_bytes_b64 is not None:
-        try:
-            data = base64.b64decode(document.content_bytes_b64)
-        except ValueError:
-            return None
-        return parse_pdf(document.url, data, document.sub_question_id)
+def parse_raw_document(document: RawDocument, payload: bytes | None) -> Source | None:
+    """Dispatch to the right parser based on content type / payload.
+
+    ``payload`` is the raw fetched body resolved from the document store —
+    ``None`` when the reference cannot be resolved (e.g. process restart).
+    """
+    if payload is None:
+        return None
     if "pdf" in document.content_type.lower():
-        return parse_pdf(
-            document.url,
-            document.content.encode("latin-1", errors="replace"),
-            document.sub_question_id,
-        )
-    return parse_html(document.url, document.content, document.sub_question_id)
+        return parse_pdf(document.url, payload, document.sub_question_id)
+    return parse_html(
+        document.url,
+        payload.decode("utf-8", errors="replace"),
+        document.sub_question_id,
+    )

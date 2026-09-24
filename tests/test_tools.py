@@ -49,7 +49,7 @@ async def test_scrape_tool_invokes_scraper() -> None:
 
         async def fetch(self, url: str, *, sub_question_id: str = "") -> RawDocument | None:
             return RawDocument(
-                url=url, content="<p>x</p>", sub_question_id=sub_question_id
+                url=url, content_ref="d-x", sub_question_id=sub_question_id
             )
 
     tool = build_scrape_tool(FakeScraper())

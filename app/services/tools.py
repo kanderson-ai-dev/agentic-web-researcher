@@ -5,6 +5,8 @@ schemas, so they can be handed to tool-calling agents. The graph's worker
 nodes call the same underlying functions through :class:`GraphDeps`.
 """
 
+import base64
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
@@ -82,14 +84,21 @@ def build_parse_tool() -> StructuredTool:
         content_type: str = "text/html",
         sub_question_id: str = "unassigned",
     ) -> Source | None:
+        if content_bytes_b64 is not None:
+            try:
+                payload = base64.b64decode(content_bytes_b64)
+            except ValueError:
+                return None
+        else:
+            payload = content.encode("utf-8", errors="replace")
         return parse_raw_document(
             RawDocument(
                 url=url,
-                content=content,
-                content_bytes_b64=content_bytes_b64,
                 content_type=content_type,
+                byte_size=len(payload),
                 sub_question_id=sub_question_id or "unassigned",
-            )
+            ),
+            payload,
         )
 
     return StructuredTool.from_function(

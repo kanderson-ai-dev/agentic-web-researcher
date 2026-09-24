@@ -87,10 +87,12 @@ def test_research_job_serialization_round_trip() -> None:
     assert restored.report == "Final report."
 
 
-def test_raw_document_preserves_whitespace() -> None:
+def test_raw_document_carries_payload_reference() -> None:
     doc = RawDocument(
         url="https://example.com",
-        content="  <html>  padded  </html>  ",
+        content_ref="d-abc123",
+        byte_size=2048,
         sub_question_id="q1",
     )
-    assert doc.content.startswith("  <html>")
+    assert doc.content_ref == "d-abc123"
+    assert doc.byte_size == 2048

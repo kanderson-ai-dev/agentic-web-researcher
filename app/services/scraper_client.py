@@ -9,7 +9,6 @@
 """
 
 import asyncio
-import base64
 from typing import Protocol
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
@@ -23,6 +22,7 @@ from tenacity import (
 )
 
 from app.core.schemas import RawDocument
+from app.services.document_store import DocumentStore
 
 _TEXT_TYPES = ("text/html", "text/plain", "application/xhtml")
 _BINARY_TYPES = ("application/pdf",)
@@ -74,6 +74,7 @@ class ScraperClient:
         max_bytes: int = 2_000_000,
         client: httpx.AsyncClient | None = None,
         browser: BrowserFetcher | None = None,
+        store: DocumentStore | None = None,
     ) -> None:
         self._user_agent = user_agent
         self._delay = delay_seconds
@@ -83,6 +84,7 @@ class ScraperClient:
             timeout=timeout_seconds, follow_redirects=True
         )
         self._browser = browser
+        self._store = store or DocumentStore()
         self._robots: dict[str, RobotFileParser] = {}
         self._last_request_at = 0.0
 
@@ -147,12 +149,13 @@ class ScraperClient:
 
         content_type = response.headers.get("content-type", "").split(";")[0].strip()
         if any(t in content_type for t in _BINARY_TYPES):
+            payload = response.content
             return RawDocument(
                 url=url,
-                content="",
-                content_bytes_b64=base64.b64encode(response.content).decode("ascii"),
+                content_ref=self._store.put(payload),
                 content_type=content_type or "application/pdf",
                 status_code=response.status_code,
+                byte_size=len(payload),
                 sub_question_id=sub_question_id,
             )
         if content_type and not any(t in content_type for t in _TEXT_TYPES):
@@ -161,11 +164,13 @@ class ScraperClient:
         text = response.text
         if not text.strip():
             return await self.fetch_rendered(url, sub_question_id=sub_question_id)
+        payload = text.encode("utf-8", errors="replace")
         return RawDocument(
             url=url,
-            content=text,
+            content_ref=self._store.put(payload),
             content_type=content_type or "text/html",
             status_code=response.status_code,
+            byte_size=len(payload),
             sub_question_id=sub_question_id,
         )
 
@@ -178,10 +183,12 @@ class ScraperClient:
         html = await self._browser.fetch(url)
         if not html:
             return None
+        payload = html.encode("utf-8", errors="replace")
         return RawDocument(
             url=url,
-            content=html,
+            content_ref=self._store.put(payload),
             content_type="text/html",
             status_code=200,
+            byte_size=len(payload),
             sub_question_id=sub_question_id,
         )

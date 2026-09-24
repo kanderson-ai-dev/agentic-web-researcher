@@ -52,17 +52,18 @@ class SearchResult(BaseModel):
 class RawDocument(BaseModel):
     """Untrusted raw content fetched by the scrape worker.
 
-    ``content`` is never interpolated into prompts directly — it must pass the
-    sanitization guardrail and be parsed into a :class:`Source` first.
+    The raw payload is never interpolated into prompts directly — it must pass
+    the sanitization guardrail and be parsed into a :class:`Source` first. It
+    also never travels inside graph state: ``content_ref`` points into the
+    process-local :class:`DocumentStore` so checkpoints and LangSmith traces
+    stay small.
     """
 
-    model_config = ConfigDict(str_strip_whitespace=False)
-
     url: str = Field(min_length=1)
-    content: str = ""
-    content_bytes_b64: str | None = None
+    content_ref: str = ""
     content_type: str = "text/html"
     status_code: int = 200
+    byte_size: int = 0
     sub_question_id: str = Field(min_length=1)
 
 

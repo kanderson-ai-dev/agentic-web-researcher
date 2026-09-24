@@ -24,6 +24,7 @@ from app.core.schemas import (
 )
 from app.graph.deps import GraphDeps
 from app.services.document_parser import parse_raw_document
+from app.services.document_store import DocumentStore
 
 CORPUS_DIR = Path(__file__).parent / "corpus"
 DATASET_PATH = Path(__file__).parent / "dataset" / "topics.json"
@@ -113,20 +114,26 @@ def build_eval_deps(topic_spec: dict[str, Any]) -> GraphDeps:
             for name in corpus_files
         ]
 
+    document_store = DocumentStore()
+
     async def scrape(result: SearchResult) -> RawDocument | None:
         name = result.url.rsplit("/", 1)[-1]
         path = CORPUS_DIR / name
         if not path.exists():
             return None
+        payload = path.read_bytes()
         return RawDocument(
             url=result.url,
+            content_ref=document_store.put(payload),
             content_type="text/html",
-            content=path.read_text(encoding="utf-8"),
+            byte_size=len(payload),
             sub_question_id=result.sub_question_id,
         )
 
     async def parse(document: RawDocument) -> Source | None:
-        return parse_raw_document(document)
+        return parse_raw_document(
+            document, document_store.get(document.content_ref)
+        )
 
     return GraphDeps(
         llm=EvalLLMClient(topic_spec["expected_aspects"]),
