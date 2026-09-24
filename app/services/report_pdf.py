@@ -100,4 +100,28 @@ def build_pdf(job: ResearchJob) -> bytes:
         for source in job.sources:
             title = source.title or source.url
             pdf.multi_cell(pdf.epw, 5, _latin1(f"- {title}\n  {source.url}"), **_CELL_KW)
+    if job.citations:
+        sources_by_id = {s.id: s for s in job.sources}
+        pdf.ln(4)
+        pdf.set_font("helvetica", "B", 13)
+        pdf.multi_cell(pdf.epw, 8, "Verified Citations", **_CELL_KW)
+        for citation in job.citations:
+            cited_source = sources_by_id.get(citation.source_id)
+            pdf.set_font("helvetica", "", 9)
+            pdf.multi_cell(pdf.epw, 5, _latin1(f"- {_strip_inline_md(citation.claim)}"), **_CELL_KW)
+            pdf.set_font("helvetica", "I", 8)
+            pdf.multi_cell(pdf.epw, 5, _latin1(f'  "{citation.quote}"'), **_CELL_KW)
+            if cited_source is not None:
+                pdf.set_font("helvetica", "", 8)
+                pdf.set_text_color(0, 0, 200)
+                pdf.multi_cell(
+                    pdf.epw,
+                    5,
+                    _latin1(
+                        f"  {cited_source.title or cited_source.url} | {cited_source.url}"
+                    ),
+                    **_CELL_KW,
+                )
+                pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
     return bytes(pdf.output())

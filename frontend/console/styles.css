@@ -107,8 +107,12 @@ button.danger { background: transparent; color: var(--danger); border-color: var
 #source-list, #citation-list { font-size: 0.85rem; padding-left: 1.2rem; }
 #source-list a { color: var(--accent); }
 #citation-list blockquote {
-  margin: 0.25rem 0 0.75rem;
+  margin: 0.25rem 0 0.35rem;
   padding-left: 0.75rem;
   border-left: 2px solid var(--border);
   color: var(--muted);
 }
+.citation-src { margin: 0 0 0.75rem; font-size: 0.8rem; }
+.citation-src a { color: var(--accent); text-decoration: none; }
+.citation-src a:hover { text-decoration: underline; }
+.citation-src a::before { content: "→ "; color: var(--muted); }

@@ -235,8 +235,14 @@ $("pdf-btn").addEventListener("click", async () => {
   URL.revokeObjectURL(url);
 });
 
+const esc = (s) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
 function renderMarkdown(md) {
-  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return esc(md)
     .replace(/^### (.*)$/gm, "<h3>$1</h3>")
     .replace(/^## (.*)$/gm, "<h2>$1</h2>")
@@ -266,9 +272,16 @@ async function loadResult(jobId) {
     $("source-list").appendChild(li);
   }
   $("citation-list").innerHTML = "";
+  const sourcesById = new Map((job.sources || []).map((s) => [s.id, s]));
   for (const c of job.citations || []) {
     const li = document.createElement("li");
-    li.innerHTML = `${c.claim}<blockquote>${c.quote}</blockquote>`;
+    const source = sourcesById.get(c.source_id);
+    const link = source
+      ? `<a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(source.title || source.url)}</a>`
+      : `<em class="hint">source unavailable</em>`;
+    li.innerHTML =
+      `${esc(c.claim)}<blockquote>${esc(c.quote)}</blockquote>` +
+      `<div class="citation-src">${link}</div>`;
     $("citation-list").appendChild(li);
   }
   $("job-meta").textContent =
