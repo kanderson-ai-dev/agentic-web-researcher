@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/*.sqlite
+data/*.sqlite-*
+logs/
+
+# Working/planning documents (never public)
+PLAN.md
+PLAN-2.md
+AGENTS.md
+AGENTS_before.md
+README-example*.md
+OPENCODE_CHEATSHEET.md
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
