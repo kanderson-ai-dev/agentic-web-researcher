@@ -64,12 +64,57 @@ $("login-form").addEventListener("submit", async (e) => {
   }
 });
 
+/* Internal graph node names must never reach the UI: map each one to a
+   human-readable phase label, and collapse consecutive repeats of the same
+   phase into a single line with a counter. */
+const NODE_LABELS = {
+  __job__: "Job",
+  input_guardrail: "Screening topic",
+  planner: "Planning research questions",
+  search_worker: "Searching the web",
+  aggregate_search: "Collecting search results",
+  scrape_worker: "Fetching pages",
+  aggregate_documents: "Collecting documents",
+  document_worker: "Parsing & sanitizing content",
+  to_critic: "Preparing evidence",
+  critic: "Evaluating coverage",
+  replan: "Planning follow-up research",
+  writer: "Writing report",
+  output_guardrail: "Verifying citations",
+  human_review: "Submitting for review",
+  report_assembler: "Assembling final report",
+  rejection_output: "Request rejected",
+};
+
+const STATUS_LABELS = {
+  started: "started",
+  completed: "done",
+  failed: "failed",
+  awaiting_review: "awaiting your review",
+};
+
 function logEvent(ev) {
-  const li = document.createElement("li");
+  const label = NODE_LABELS[ev.node] || ev.node;
+  const status = STATUS_LABELS[ev.status] || ev.status;
   const time = new Date(ev.ts).toLocaleTimeString();
-  li.innerHTML = `<span class="node">${ev.node}</span> ${ev.status}` +
+  const log = $("event-log");
+  const last = log.lastElementChild;
+
+  // Collapse consecutive events from the same phase into "label ×N".
+  if (last && last.dataset.node === ev.node && ev.node !== "__job__") {
+    const count = Number(last.dataset.count || 1) + 1;
+    last.dataset.count = String(count);
+    last.innerHTML =
+      `<span class="node">${label}</span> ${status}` +
+      `<span class="count">×${count}</span>` +
+      `<span class="time">${time}</span>`;
+    return;
+  }
+  const li = document.createElement("li");
+  li.dataset.node = ev.node;
+  li.innerHTML = `<span class="node">${label}</span> ${status}` +
     `<span class="time">${time}</span>`;
-  $("event-log").appendChild(li);
+  log.appendChild(li);
 }
 
 $("topic-form").addEventListener("submit", async (e) => {
