@@ -10,6 +10,8 @@ This repository is engineered to the standard of a paid engagement, not a demo:
 guardrail-first design, deterministic offline evaluation that gates CI, per-job cost
 accounting, and full observability.
 
+![Live execution: submit → node events → HITL review → cited report](docs/execution-demo.gif)
+
 ## Why this architecture
 
 ```
