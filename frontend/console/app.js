@@ -121,7 +121,7 @@ $("topic-form").addEventListener("submit", async (e) => {
   $("job-status").textContent = currentJob.status;
   $("phase-label").textContent = "Starting…";
   $("elapsed").textContent = "";
-  $("spinner").classList.remove("done");
+  $("spinner").classList.remove("hidden");
   startPhaseTimer();
   show("progress-panel");
   hide("review-panel");
@@ -157,15 +157,18 @@ function handleEvent(ev) {
   if (ev.status === "awaiting_review") {
     $("job-status").textContent = "awaiting_review";
     $("phase-label").textContent = "Waiting for your review";
-    $("spinner").classList.add("done");
+    $("spinner").classList.add("hidden");
     stopPhaseTimer();
     openReview(JSON.parse(ev.detail || "{}"));
   } else if (ev.status === "completed" || ev.status === "failed") {
     $("job-status").textContent = ev.status;
-    $("phase-label").textContent =
-      ev.status === "completed" ? "Done" : "Job failed";
-    $("spinner").classList.add("done");
+    $("spinner").classList.add("hidden");
     stopPhaseTimer();
+    if (ev.status === "completed") {
+      hide("progress-panel");
+    } else {
+      $("phase-label").textContent = "Job failed";
+    }
     loadResult(currentJob.id);
   }
 }
@@ -209,7 +212,8 @@ async function submitReview(decision) {
     hide("review-panel");
     $("job-status").textContent = "running";
     $("phase-label").textContent = "Finishing up…";
-    $("spinner").classList.remove("done");
+    $("spinner").classList.remove("hidden");
+    show("progress-panel");
     startPhaseTimer();
   } else {
     alert(`Review failed (${resp.status})`);
@@ -250,6 +254,12 @@ async function loadResult(jobId) {
     ? renderMarkdown(job.report)
     : "<p><em>No report produced.</em></p>";
   $("source-list").innerHTML = "";
+  if (!job.sources || job.sources.length === 0) {
+    const li = document.createElement("li");
+    li.innerHTML =
+      '<em class="hint">No web sources were collected for this job.</em>';
+    $("source-list").appendChild(li);
+  }
   for (const s of job.sources || []) {
     const li = document.createElement("li");
     li.innerHTML = `<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title || s.url}</a>`;
