@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from app.core.config import Settings
 from app.core.schemas import Citation, CriticVerdict, Source, SubQuestion
+from app.graph import prompts
 from app.services.usage import record_usage
 
 
@@ -83,10 +84,8 @@ class OpenAILLMClient:
         result = await planner.ainvoke(
             [
                 SystemMessage(
-                    content=(
-                        "You are a research planner. Decompose the topic into focused, "
-                        "non-overlapping sub-questions that together cover it. Return at "
-                        f"most {max_questions} questions, in {language}."
+                    content=prompts.planner_system(
+                        max_questions=max_questions, language=language
                     )
                 ),
                 HumanMessage(content=topic),
@@ -107,25 +106,15 @@ class OpenAILLMClient:
         sources: Sequence[Source],
     ) -> CriticVerdict:
         critic = self._chat.with_structured_output(CriticVerdict, include_raw=True)
-        evidence = "\n\n".join(
-            f"[{s.id}] {s.title or s.url}\n{s.extracted_text[:1500]}" for s in sources
+        evidence = prompts.format_evidence(
+            sources, per_source_chars=prompts.CRITIC_EVIDENCE_CHARS
         )
         result = await critic.ainvoke(
             [
-                SystemMessage(
-                    content=(
-                        "You are a research critic. Given the planned sub-questions and "
-                        "the evidence collected so far, grade coverage and whether the "
-                        "evidence could support citations. List concrete missing aspects "
-                        "only when important gaps remain; do not ask for more research "
-                        "on marginal gaps."
-                    )
-                ),
+                SystemMessage(content=prompts.critic_system()),
                 HumanMessage(
-                    content=(
-                        f"Topic: {topic}\n\nSub-questions:\n"
-                        + "\n".join(f"- {sq.question}" for sq in sub_questions)
-                        + f"\n\nEvidence:\n{evidence or '(none)'}"
+                    content=prompts.research_prompt(
+                        topic=topic, sub_questions=sub_questions, evidence=evidence
                     )
                 ),
             ]
@@ -142,26 +131,15 @@ class OpenAILLMClient:
         language: str,
     ) -> tuple[str, list[Citation]]:
         writer = self._chat.with_structured_output(_ReportOutput, include_raw=True)
-        evidence = "\n\n".join(
-            f"[{s.id}] {s.title or s.url} ({s.url})\n{s.extracted_text[:2000]}"
-            for s in sources
+        evidence = prompts.format_evidence(
+            sources, per_source_chars=prompts.WRITER_EVIDENCE_CHARS
         )
         result = await writer.ainvoke(
             [
-                SystemMessage(
-                    content=(
-                        "You are a research writer. Write a markdown report answering "
-                        f"the topic in {language}. Every factual claim must be backed "
-                        "by a citation: claim text, the source id it came from, and a "
-                        "short verbatim quote from that source's extracted text. Never "
-                        "invent facts or citations."
-                    )
-                ),
+                SystemMessage(content=prompts.writer_system(language=language)),
                 HumanMessage(
-                    content=(
-                        f"Topic: {topic}\n\nSub-questions:\n"
-                        + "\n".join(f"- {sq.question}" for sq in sub_questions)
-                        + f"\n\nEvidence:\n{evidence or '(none)'}"
+                    content=prompts.research_prompt(
+                        topic=topic, sub_questions=sub_questions, evidence=evidence
                     )
                 ),
             ]
