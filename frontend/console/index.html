@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Research Console — Autonomous Web Research Agent</title>
+  <link rel="stylesheet" href="/console/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Research Console</h1>
+    <span id="auth-status" class="badge">signed out</span>
+  </header>
+
+  <section id="login-panel" class="panel">
+    <h2>Sign in</h2>
+    <form id="login-form">
+      <input id="login-username" placeholder="username" autocomplete="username" required />
+      <input id="login-password" type="password" placeholder="password" autocomplete="current-password" required />
+      <button type="submit">Sign in</button>
+    </form>
+    <p class="hint">When the API runs with auth disabled, any credentials work via the
+    <code>/health</code> path — leave fields as-is and press sign in to continue.</p>
+    <p id="login-error" class="error"></p>
+  </section>
+
+  <section id="research-panel" class="panel hidden">
+    <form id="topic-form" class="topic-form">
+      <input id="topic-input" placeholder="Research topic (min. 10 chars)" minlength="10" required />
+      <select id="depth-select">
+        <option value="quick">quick</option>
+        <option value="standard" selected>standard</option>
+        <option value="deep">deep</option>
+      </select>
+      <button type="submit">Research</button>
+    </form>
+  </section>
+
+  <section id="progress-panel" class="panel hidden">
+    <h2>Progress <span id="job-status" class="badge"></span></h2>
+    <ul id="event-log" class="event-log"></ul>
+  </section>
+
+  <section id="review-panel" class="panel hidden">
+    <h2>Human review required</h2>
+    <p id="review-meta" class="hint"></p>
+    <pre id="review-report" class="report-preview"></pre>
+    <div class="review-actions">
+      <button id="approve-btn" class="primary">Approve</button>
+      <button id="edit-btn">Edit &amp; approve</button>
+      <button id="reject-btn" class="danger">Reject</button>
+    </div>
+    <textarea id="edit-area" class="hidden" rows="12"></textarea>
+  </section>
+
+  <section id="result-panel" class="panel hidden">
+    <h2>Report</h2>
+    <div id="report-body" class="report"></div>
+    <h3>Sources</h3>
+    <ul id="source-list"></ul>
+    <h3>Citations</h3>
+    <ul id="citation-list"></ul>
+    <p id="job-meta" class="hint"></p>
+  </section>
+
+  <script src="/console/app.js"></script>
+</body>
+</html>

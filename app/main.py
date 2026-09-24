@@ -3,8 +3,10 @@
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1.routes.auth import router as auth_router
@@ -86,6 +88,13 @@ def create_app(
     async def health() -> dict[str, str]:
         """Liveness probe."""
         return {"status": "ok"}
+
+    # Static frontend, mounted last so API routes always win.
+    frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+    if frontend_dir.is_dir():
+        app.mount(
+            "/", StaticFiles(directory=frontend_dir, html=True), name="frontend"
+        )
 
     return app
 

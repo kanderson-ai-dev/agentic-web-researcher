@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Autonomous Web Research Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-200 antialiased">
+  <main class="mx-auto max-w-3xl px-6 py-20">
+    <p class="text-sm font-medium uppercase tracking-widest text-emerald-400">
+      Agentic AI · LangGraph · FastAPI
+    </p>
+    <h1 class="mt-4 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+      Autonomous Web Research Agent
+    </h1>
+    <p class="mt-6 text-lg leading-8 text-slate-400">
+      A multi-agent research microservice. Give it a topic — a planner
+      decomposes it, parallel workers search, scrape and parse the live web,
+      a critic bounds coverage gaps, and a writer produces a citation-verified
+      report behind a human review gate.
+    </p>
+
+    <div class="mt-10 grid gap-4 sm:grid-cols-2">
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 class="font-semibold text-white">Multi-agent pipeline</h2>
+        <p class="mt-2 text-sm text-slate-400">
+          Planner → parallel search/scrape/parse workers → bounded critic loop
+          → writer → output guardrail → HITL gate.
+        </p>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 class="font-semibold text-white">Untrusted-content defense</h2>
+        <p class="mt-2 text-sm text-slate-400">
+          Scraped pages are sanitized before reaching the LLM — indirect prompt
+          injection embedded in web content is neutralized.
+        </p>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 class="font-semibold text-white">Evaluation-driven</h2>
+        <p class="mt-2 text-sm text-slate-400">
+          Versioned dataset, deterministic evaluators and a CI quality gate
+          (citation support, source precision, topic coverage).
+        </p>
+      </div>
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 class="font-semibold text-white">Production posture</h2>
+        <p class="mt-2 text-sm text-slate-400">
+          JWT auth, rate limiting, SSE progress, SQLite checkpoints, Prometheus
+          metrics, structlog, per-job cost tracking.
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-12 flex items-center gap-4">
+      <a
+        href="/console/"
+        class="rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+      >
+        Open the operator console
+      </a>
+      <a href="/docs" class="text-sm font-medium text-slate-300 hover:text-white">
+        API docs →
+      </a>
+    </div>
+  </main>
+</body>
+</html>
