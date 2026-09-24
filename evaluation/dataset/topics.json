@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "description": "Offline EDD dataset. Each topic maps to fixture corpus documents; metrics are computed deterministically — no live network or LLM required.",
+  "topics": [
+    {
+      "id": "eu-ai-act",
+      "topic": "impact of the EU AI Act on startups",
+      "expected_aspects": ["scope", "obligations", "penalties", "timeline"],
+      "source_relevance_terms": ["AI Act", "startup"],
+      "corpus": ["ai_act_overview.html", "ai_act_startups.html"]
+    },
+    {
+      "id": "remote-work",
+      "topic": "effect of remote work on software team productivity",
+      "expected_aspects": ["productivity", "collaboration", "retention"],
+      "source_relevance_terms": ["remote", "productivity"],
+      "corpus": ["remote_work_productivity.html"]
+    }
+  ]
+}

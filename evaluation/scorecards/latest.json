@@ -1,0 +1,58 @@
+{
+  "dataset_version": "1.0.0",
+  "generated_at": "2026-09-24T18:41:55.584818+00:00",
+  "mode": "offline-deterministic",
+  "results": [
+    {
+      "id": "eu-ai-act",
+      "topic": "impact of the EU AI Act on startups",
+      "metrics": {
+        "citation_support_rate": 1.0,
+        "source_precision": 1.0,
+        "topic_coverage": 1.0
+      },
+      "counts": {
+        "sources": 2,
+        "citations_kept": 8,
+        "citations_dropped": 0
+      }
+    },
+    {
+      "id": "remote-work",
+      "topic": "effect of remote work on software team productivity",
+      "metrics": {
+        "citation_support_rate": 1.0,
+        "source_precision": 1.0,
+        "topic_coverage": 1.0
+      },
+      "counts": {
+        "sources": 1,
+        "citations_kept": 3,
+        "citations_dropped": 0
+      }
+    }
+  ],
+  "aggregate": {
+    "citation_support_rate": 1.0,
+    "source_precision": 1.0,
+    "topic_coverage": 1.0
+  },
+  "gates": {
+    "citation_support_rate": {
+      "value": 1.0,
+      "threshold": 0.9,
+      "passed": true
+    },
+    "source_precision": {
+      "value": 1.0,
+      "threshold": 0.8,
+      "passed": true
+    },
+    "topic_coverage": {
+      "value": 1.0,
+      "threshold": 0.85,
+      "passed": true
+    }
+  },
+  "passed": true
+}

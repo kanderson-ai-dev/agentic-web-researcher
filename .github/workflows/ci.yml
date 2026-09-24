@@ -31,3 +31,6 @@ jobs:
 
       - name: Tests (offline, no secrets)
         run: uv run pytest -v --cov=app --cov-report=term-missing
+
+      - name: EDD quality gate (offline scorecard)
+        run: uv run python -m evaluation.run_eval
