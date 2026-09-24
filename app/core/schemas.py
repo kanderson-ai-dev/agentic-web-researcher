@@ -60,6 +60,7 @@ class RawDocument(BaseModel):
 
     url: str = Field(min_length=1)
     content: str = ""
+    content_bytes_b64: str | None = None
     content_type: str = "text/html"
     status_code: int = 200
     sub_question_id: str = Field(min_length=1)

@@ -5,7 +5,6 @@ dependencies without globals. Nodes return *partial* state updates; reducer
 channels merge parallel worker output automatically.
 """
 
-import hashlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -217,9 +216,3 @@ def make_report_assembler(_deps: GraphDeps) -> StateNode:
         return {"sub_questions": updated}
 
     return report_assembler
-
-
-def source_id_for(url: str, content: str) -> str:
-    """Stable short id for a source derived from its URL and content."""
-    digest = hashlib.sha256(f"{url}|{content}".encode()).hexdigest()[:12]
-    return f"s-{digest}"
