@@ -31,7 +31,7 @@ This is the tier above a single-agent tool-calling demo: a **planner** dispatche
 **parallel specialized workers** (search, scrape, document-parse), a **critic**
 grades the evidence and can trigger bounded re-planning rounds, and a **writer**
 synthesizes a final report that only cites claims it can actually back with
-verbatim source text. It is engineered to the standard of a paid engagement, not
+text verifiably present in the fetched source. It is engineered to the standard of a paid engagement, not
 a portfolio toy: guardrail-first design, deterministic offline evaluation that
 gates CI, per-job cost accounting, and full observability — every number below
 is reproducible with `uv run python -m evaluation.run_eval`.
@@ -53,9 +53,10 @@ is reproducible with `uv run python -m evaluation.run_eval`.
 - 🔁 **Bounded autonomy, not an open-ended loop.** The critic/re-plan cycle is
   capped by `MAX_CRITIC_ROUNDS` — termination is guaranteed by construction,
   proven by a dedicated test, not by luck.
-- ✅ **Citations are verified, not trusted.** A claim that cannot be backed by a
-  verbatim quote from its fetched source is dropped from the report and
-  counted — quality is *measured*, never assumed.
+- ✅ **Citations are verified, not trusted.** Every citation's quote is checked
+  against the fetched source text — verbatim match, punctuation-insensitive,
+  or ≥0.85 sliding-window similarity. Anything else is dropped from the
+  report and counted — quality is *measured*, never assumed.
 - 🧑‍⚖️ **Honest human-in-the-loop.** The review gate is a real LangGraph
   `interrupt()` on a SQLite checkpointer: jobs pause at `awaiting_review` and
   resume via `POST /research/{id}/review` (`approve` / `edit` / `reject`), and
@@ -104,7 +105,7 @@ is reproducible with `uv run python -m evaluation.run_eval`.
               └────┬────┘
                    ▼
          ┌───────────────────┐
-         │ output guardrail  │  drop citations without verbatim source support
+         │ output guardrail  │  drop citations without verifiable source support
          └────────┬──────────┘
                   ▼
          ┌───────────────────┐
@@ -121,8 +122,8 @@ Every design choice is defensible in an interview:
   instructions.
 - **Bounded autonomy.** The critic/re-plan loop is capped (`max_critic_rounds`)
   — termination is guaranteed by construction, not by luck.
-- **Verifiable output.** A citation that cannot be backed by a verbatim quote
-  from its source is dropped and counted. Quality is *measured*, not assumed.
+- **Verifiable output.** A citation that cannot be backed by its source's
+  extracted text is dropped and counted. Quality is *measured*, not assumed.
 - **Honest human-in-the-loop.** The review gate is a real LangGraph
   `interrupt()` on a SQLite checkpointer — jobs pause at `awaiting_review` and
   resume via `POST /research/{id}/review` (`approve` / `edit` / `reject`).
