@@ -123,6 +123,19 @@ the live model when real credentials are provided.
 - **Checkpoints**: LangGraph `AsyncSqliteSaver` per `job_id` — the mechanism that
   makes interrupt/resume and crash recovery real.
 
+### LangSmith tracing (real run)
+
+Every run produces a full graph trace — node-level latency, token counts and
+cost per agent role:
+
+![Run overview: 17.9s, 6.6K tokens, $0.0015](docs/langsmith-trace-overview.png)
+
+![Parallel fan-out: one search worker per sub-question](docs/langsmith-parallel-workers.png)
+
+![LLM roles: critic grades coverage, writer synthesizes the report](docs/langsmith-critic-writer.png)
+
+![Output guardrail verifies citations, then the run interrupts for human review](docs/langsmith-guardrails-hitl.png)
+
 ## Security posture
 
 JWT auth (generic 401s), rate-limited login + submit, security headers middleware,
