@@ -36,8 +36,15 @@ class Settings(BaseSettings):
     langchain_tracing_v2: bool = False
     langchain_project: str = "agentic-web-researcher"
 
-    # Auth
+    # Auth — when ``jwt_secret_key`` is unset, auth is disabled entirely
+    # (local/dev mode). Login additionally requires ``admin_password``.
     jwt_secret_key: SecretStr | None = None
+    jwt_issuer: str = "agentic-web-researcher"
+    jwt_ttl_minutes: int = 60
+    admin_username: str = "admin"
+    admin_password: SecretStr | None = None
+    rate_limit_login_per_minute: int = 5
+    rate_limit_research_per_minute: int = 10
 
     # Agent / pipeline limits
     max_sub_questions: int = 6

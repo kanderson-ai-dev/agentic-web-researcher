@@ -20,6 +20,9 @@ dependencies = [
     "lxml>=5.3",
     "pypdf>=5.0",
     "structlog>=24.0",
+    "pyjwt>=2.9",
+    "prometheus-client>=0.21",
+    "prometheus-fastapi-instrumentator>=7.0",
 ]
 
 [dependency-groups]

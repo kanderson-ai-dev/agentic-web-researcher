@@ -4,15 +4,19 @@ import asyncio
 import uuid
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from app.core.rate_limit import rate_limiter
 from app.core.schemas import JobEvent, JobStatus, ResearchJob, ResearchRequest
+from app.core.security import require_auth
 from app.graph.guardrails import screen_topic
 from app.services.job_runner import JobRunner
 from app.services.job_store import JobStore
 
-router = APIRouter(prefix="/research", tags=["research"])
+router = APIRouter(
+    prefix="/research", tags=["research"], dependencies=[Depends(require_auth)]
+)
 
 
 def _runner(request: Request) -> JobRunner:
@@ -26,6 +30,15 @@ def _store(request: Request) -> JobStore:
 @router.post("", response_model=ResearchJob, status_code=202)
 async def submit_research(payload: ResearchRequest, request: Request) -> ResearchJob:
     """Enqueue a research job; returns the queued job record immediately."""
+    settings = request.app.state.settings
+    client_ip = request.client.host if request.client else "unknown"
+    if not rate_limiter.check(
+        "research",
+        client_ip,
+        limit=settings.rate_limit_research_per_minute,
+        window_seconds=60.0,
+    ):
+        raise HTTPException(status_code=429, detail="too many requests")
     screened = screen_topic(payload.topic)
     if not screened.allowed:
         raise HTTPException(
