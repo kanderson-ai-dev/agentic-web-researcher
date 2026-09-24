@@ -72,7 +72,14 @@ class ParseTask(TypedDict):
 def initial_state(
     request: ResearchRequest, *, job_id: str, max_critic_rounds: int = 2
 ) -> ResearchState:
-    """Build the starting state for a research job."""
+    """Build the starting state for a research job.
+
+    ``quick`` depth is a single-pass best-effort run: the critic still grades
+    coverage and may escalate to the human gate, but no re-planning round is
+    performed — latency stays bounded for demo-style requests.
+    """
+    if request.depth == "quick":
+        max_critic_rounds = 0
     return {
         "job_id": job_id,
         "request": request,

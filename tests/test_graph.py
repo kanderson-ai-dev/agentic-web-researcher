@@ -184,3 +184,20 @@ async def test_output_guardrail_drops_fabricated_citations(
         c.source_id != "nonexistent-source" for c in final["citations"]
     )
     assert any("dropped" in e for e in final["errors"])
+
+
+async def test_quick_depth_disables_replan_rounds(stub_deps: GraphDeps) -> None:
+    """depth='quick' is a single-pass run: critic still grades + escalates,
+    but no re-planning round runs even when it wants more research."""
+    from app.core.schemas import ResearchRequest
+    from app.services.llm_client import StubLLMClient
+
+    deps = dataclasses.replace(stub_deps, llm=StubLLMClient(force_needs_more=True))
+    graph = build_graph(deps)
+    request = ResearchRequest(topic="quick pass on agentic ai safety", depth="quick")
+    final = await graph.ainvoke(initial_state(request, job_id="job-quick"))
+
+    assert final["critic_rounds"] == 1
+    assert final["max_critic_rounds"] == 0
+    assert final["escalated"] is True  # gaps surfaced to the human gate
+    assert final["report"]  # writer still ran
