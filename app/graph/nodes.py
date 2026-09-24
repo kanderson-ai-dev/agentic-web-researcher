@@ -11,6 +11,11 @@ from typing import Any
 
 from app.core.schemas import SubQuestion, SubQuestionStatus
 from app.graph.deps import GraphDeps
+from app.graph.guardrails import (
+    sanitize_scraped_content,
+    screen_topic,
+    verify_citations,
+)
 from app.graph.state import ParseTask, ResearchState, ScrapeTask, SearchTask
 
 _DEPTH_TARGETS = {"quick": 3, "standard": 5, "deep": 8}
@@ -19,6 +24,31 @@ StateNode = Callable[[ResearchState], Awaitable[dict[str, Any]]]
 SearchNode = Callable[[SearchTask], Awaitable[dict[str, Any]]]
 ScrapeNode = Callable[[ScrapeTask], Awaitable[dict[str, Any]]]
 ParseNode = Callable[[ParseTask], Awaitable[dict[str, Any]]]
+
+
+def make_input_guardrail(_deps: GraphDeps) -> StateNode:
+    """Screen the topic before any LLM call or external request."""
+
+    async def input_guardrail(state: ResearchState) -> dict[str, Any]:
+        result = screen_topic(state["topic"])
+        if not result.allowed:
+            return {"blocked": True, "rejection_reason": result.reason}
+        return {"blocked": False, "topic": result.sanitized_topic}
+
+    return input_guardrail
+
+
+def make_rejection_output(_deps: GraphDeps) -> StateNode:
+    """Terminal node for blocked requests: generic refusal, no detail leakage."""
+
+    async def rejection_output(state: ResearchState) -> dict[str, Any]:
+        del state
+        return {
+            "report": "This research request could not be processed.",
+            "citations": [],
+        }
+
+    return rejection_output
 
 
 def make_planner(deps: GraphDeps) -> StateNode:
@@ -79,7 +109,12 @@ def make_document_worker(deps: GraphDeps) -> ParseNode:
             return {"errors": [f"parse failed for {document.url}: {exc}"]}
         if source is None:
             return {"errors": [f"parse produced no source for {document.url}"]}
-        return {"sources": [source]}
+        sanitized = source.model_copy(
+            update={
+                "extracted_text": sanitize_scraped_content(source.extracted_text)
+            }
+        )
+        return {"sources": [sanitized]}
 
     return document_worker
 
@@ -139,6 +174,26 @@ def make_writer(deps: GraphDeps) -> StateNode:
         return {"report": report, "citations": citations}
 
     return writer
+
+
+def make_output_guardrail(_deps: GraphDeps) -> StateNode:
+    """Drop citations whose quote cannot be verified against its source."""
+
+    async def output_guardrail(state: ResearchState) -> dict[str, Any]:
+        kept, dropped = verify_citations(
+            state.get("citations", []), state.get("sources", [])
+        )
+        update: dict[str, Any] = {
+            "citations": kept,
+            "dropped_citations": len(dropped),
+        }
+        if dropped:
+            update["errors"] = [
+                f"output guardrail dropped {len(dropped)} unsupported citations"
+            ]
+        return update
+
+    return output_guardrail
 
 
 def make_report_assembler(_deps: GraphDeps) -> StateNode:

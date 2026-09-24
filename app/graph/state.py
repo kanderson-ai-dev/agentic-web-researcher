@@ -27,6 +27,9 @@ class ResearchState(TypedDict, total=False):
     request: ResearchRequest
     topic: str
 
+    blocked: bool
+    rejection_reason: str | None
+
     sub_questions: list[SubQuestion]
     pending_questions: list[SubQuestion]
 
@@ -40,6 +43,7 @@ class ResearchState(TypedDict, total=False):
 
     report: str | None
     citations: list[Citation]
+    dropped_citations: int
     errors: Annotated[list[str], operator.add]
 
 
@@ -69,6 +73,8 @@ def initial_state(
         "job_id": job_id,
         "request": request,
         "topic": request.topic,
+        "blocked": False,
+        "rejection_reason": None,
         "sub_questions": [],
         "pending_questions": [],
         "search_results": [],
@@ -79,5 +85,6 @@ def initial_state(
         "max_critic_rounds": max_critic_rounds,
         "report": None,
         "citations": [],
+        "dropped_citations": 0,
         "errors": [],
     }
