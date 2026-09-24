@@ -150,3 +150,71 @@ def test_verify_citations_normalizes_whitespace_and_case() -> None:
         [Citation(claim="x", source_id="s1", quote="GREW 27%")], [source]
     )
     assert len(kept) == 1
+
+
+def test_verify_citations_fuzzy_window_match() -> None:
+    """A lightly paraphrased quote (≈same words, minor edits) is supported."""
+    from app.graph.guardrails import verify_citations
+
+    source = Source(
+        id="s1",
+        url="https://x.test/p",
+        content_hash="h",
+        extracted_text=(
+            "The EU AI Act entered into force in August 2024 and introduces "
+            "risk-based obligations for providers and deployers of AI systems."
+        ),
+    )
+    quote = (
+        "The EU AI Act entered into force in August 2024 and introduces "
+        "risk-based obligations for providers and deployers of AI systems"
+    )
+    kept, dropped = verify_citations(
+        [Citation(claim="AI Act in force Aug 2024", source_id="s1", quote=quote)],
+        [source],
+    )
+    assert len(kept) == 1 and not dropped
+
+
+def test_verify_citations_punctuation_insensitive() -> None:
+    from app.graph.guardrails import verify_citations
+
+    source = Source(
+        id="s1",
+        url="https://x.test/p",
+        content_hash="h",
+        extracted_text='Startups face "significant" compliance costs — per the Act.',
+    )
+    kept, dropped = verify_citations(
+        [
+            Citation(
+                claim="c",
+                source_id="s1",
+                quote="startups face significant compliance costs per the act",
+            )
+        ],
+        [source],
+    )
+    assert len(kept) == 1 and not dropped
+
+
+def test_verify_citations_fabricated_quote_dropped() -> None:
+    from app.graph.guardrails import verify_citations
+
+    source = Source(
+        id="s1",
+        url="https://x.test/p",
+        content_hash="h",
+        extracted_text="The regulation was adopted by the European Parliament.",
+    )
+    kept, dropped = verify_citations(
+        [
+            Citation(
+                claim="c",
+                source_id="s1",
+                quote="Completely unrelated sentence about bananas and orchids.",
+            )
+        ],
+        [source],
+    )
+    assert not kept and len(dropped) == 1

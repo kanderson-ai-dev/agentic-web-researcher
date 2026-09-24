@@ -12,6 +12,7 @@ from app.services.document_parser import parse_raw_document
 from app.services.llm_client import get_llm_client
 from app.services.scraper_client import ScraperClient
 from app.services.search_client import (
+    DuckDuckGoSearchClient,
     NullSearchClient,
     SearchClient,
     TavilySearchClient,
@@ -23,12 +24,15 @@ def build_graph_deps(settings: Settings) -> GraphDeps:
     llm = get_llm_client(settings)
 
     search_client: SearchClient
-    if settings.has_search_credentials():
+    provider = settings.search_provider.lower()
+    if settings.has_search_credentials() and provider in {"auto", "tavily"}:
         assert settings.search_api_key is not None
         search_client = TavilySearchClient(
             api_key=settings.search_api_key.get_secret_value(),
             base_url=settings.search_api_base_url,
         )
+    elif provider in {"auto", "duckduckgo"}:
+        search_client = DuckDuckGoSearchClient()
     else:
         search_client = NullSearchClient()
 

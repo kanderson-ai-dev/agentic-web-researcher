@@ -9,13 +9,15 @@ Three layers:
    data*: embedded instruction-injection lines are removed and the text is
    truncated. Sanitized text is the only form allowed downstream.
 3. ``verify_citations`` — output guardrail requiring every citation's quote to
-   appear verbatim in the claimed source's extracted text. Unsupported
+   appear in the claimed source's extracted text (verbatim modulo
+   punctuation/case, or high sliding-window similarity). Unsupported
    citations are dropped, never silently kept.
 """
 
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from app.core.schemas import Citation, Source
 
@@ -108,26 +110,60 @@ def _normalized(text: str) -> str:
     return _WS_RE.sub(" ", text).strip().lower()
 
 
+def _squashed(text: str) -> str:
+    """Alnum-only lowercase form — ignores punctuation/typography variance."""
+    return re.sub(r"[^a-z0-9]+", "", _normalized(text))
+
+
+_SIMILARITY_THRESHOLD = 0.85
+
+
+def _best_window_ratio(quote: str, text: str) -> float:
+    """Highest similarity of ``quote`` against same-length windows of ``text``."""
+    n = len(quote)
+    if n == 0 or not text:
+        return 0.0
+    matcher = SequenceMatcher()
+    matcher.set_seq2(quote)
+    best = 0.0
+    step = max(1, n // 4)
+    for i in range(0, max(1, len(text) - n + 1), step):
+        matcher.set_seq1(text[i : i + n])
+        if matcher.quick_ratio() >= best:
+            best = max(best, matcher.ratio())
+    return best
+
+
+def _quote_supported(quote: str, extracted_text: str) -> bool:
+    norm_quote, norm_text = _normalized(quote), _normalized(extracted_text)
+    if norm_quote and norm_quote in norm_text:
+        return True
+    squash_quote = _squashed(quote)
+    if len(squash_quote) >= 20 and squash_quote in _squashed(extracted_text):
+        return True
+    return _best_window_ratio(norm_quote, norm_text) >= _SIMILARITY_THRESHOLD
+
+
 def verify_citations(
     citations: Sequence[Citation], sources: Sequence[Source]
 ) -> tuple[list[Citation], list[Citation]]:
     """Split citations into (supported, unsupported).
 
     A citation is supported only if ``source_id`` exists and its ``quote``
-    appears verbatim (modulo whitespace/case) in that source's extracted text.
+    appears in that source's extracted text. Matching is verbatim modulo
+    whitespace/case, punctuation-insensitive, and finally tolerant to light
+    paraphrase (sliding-window similarity >= 0.85) — the quote must still
+    demonstrably come from the cited source.
     """
     by_id = {s.id: s for s in sources}
     kept: list[Citation] = []
     dropped: list[Citation] = []
     for citation in citations:
         source = by_id.get(citation.source_id)
-        if source is None:
-            dropped.append(citation)
-            continue
-        if _normalized(citation.quote) and _normalized(citation.quote) in _normalized(
-            source.extracted_text
+        if source is None or not _quote_supported(
+            citation.quote, source.extracted_text
         ):
-            kept.append(citation)
-        else:
             dropped.append(citation)
+        else:
+            kept.append(citation)
     return kept, dropped

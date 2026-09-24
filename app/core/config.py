@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     llm_model: str = "gpt-4o-mini"
 
-    # Web search provider (Tavily-compatible API)
+    # Web search provider. "auto": Tavily when a key is configured, otherwise
+    # the free DuckDuckGo fallback. Explicit values: tavily|duckduckgo|none.
+    search_provider: str = "auto"
     search_api_key: SecretStr | None = None
     search_api_base_url: str = "https://api.tavily.com"
 

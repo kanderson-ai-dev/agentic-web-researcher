@@ -5,11 +5,16 @@
   same search.
 - ``NullSearchClient`` degrades cleanly when no API key is configured — the
   rest of the pipeline still runs (it simply gathers no web evidence).
+- ``DuckDuckGoSearchClient`` is a free, keyless fallback that parses
+  DuckDuckGo's HTML endpoint — real web search without any signup.
 """
 
+import asyncio
 from typing import Protocol
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
+from bs4 import BeautifulSoup
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -84,6 +89,88 @@ class TavilySearchClient:
             if item.get("url")
         ]
         self._cache[key] = results
+        return results
+
+
+class DuckDuckGoSearchClient:
+    """Free, keyless web search via DuckDuckGo's HTML endpoint.
+
+    Result links arrive as ``//duckduckgo.com/l/?uddg=<encoded>`` redirects;
+    the real URL is extracted from the ``uddg`` parameter. A small delay
+    between queries keeps usage polite.
+    """
+
+    _ENDPOINT = "https://html.duckduckgo.com/html/"
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 15.0,
+        delay_seconds: float = 1.0,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self._client = client or httpx.AsyncClient(
+            timeout=timeout_seconds,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; research-agent/0.1)"},
+            follow_redirects=True,
+        )
+        self._delay = delay_seconds
+        self._last_request = 0.0
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def _throttle(self) -> None:
+        elapsed = asyncio.get_running_loop().time() - self._last_request
+        if elapsed < self._delay:
+            await asyncio.sleep(self._delay - elapsed)
+        self._last_request = asyncio.get_running_loop().time()
+
+    @staticmethod
+    def _result_url(href: str) -> str | None:
+        """Extract the destination URL from a DDG redirect link."""
+        if "uddg=" in href:
+            target = parse_qs(urlparse(href).query).get("uddg", [None])[0]
+            return unquote(target) if target else None
+        parsed = urlparse(href if "://" in href else f"https:{href}")
+        return parsed.geturl() if parsed.scheme in {"http", "https"} else None
+
+    async def search(self, query: str, *, max_results: int) -> list[SearchResult]:
+        await self._throttle()
+        try:
+            response = await self._client.get(
+                self._ENDPOINT, params={"q": query}
+            )
+        except httpx.HTTPError:
+            return []
+        if response.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(response.text, "lxml")
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        for anchor in soup.select("a.result__a"):
+            href = anchor.get("href", "")
+            url = self._result_url(href if isinstance(href, str) else "")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            container = anchor.find_parent("div", class_="result")
+            snippet_tag = (
+                container.select_one(".result__snippet") if container else None
+            )
+            results.append(
+                SearchResult(
+                    url=url,
+                    title=anchor.get_text(strip=True) or None,
+                    snippet=(
+                        snippet_tag.get_text(" ", strip=True) if snippet_tag else ""
+                    ),
+                    sub_question_id="unassigned",
+                )
+            )
+            if len(results) >= max_results:
+                break
         return results
 
 
