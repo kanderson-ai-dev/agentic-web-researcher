@@ -65,7 +65,7 @@ is reproducible with `uv run python -m evaluation.run_eval`.
 - 💰 **Cost and latency are accounted per job**, not per call — token usage
   across all four LLM roles (planner, critic, writer, and the workers) rolls up
   into one `cost_usd` and is exposed via Prometheus and the console.
-- 🧪 **CI green with zero secrets.** 142 tests, 93% coverage on `app/`, run
+- 🧪 **CI green with zero secrets.** 143 tests, 93% coverage on `app/`, run
   fully offline with stubs — no search/LLM credentials required for a fork to
   clone and pass; cloud-backed paths degrade cleanly instead of failing.
 
@@ -73,49 +73,38 @@ is reproducible with `uv run python -m evaluation.run_eval`.
 
 ## 🏗️ Architecture
 
-![Compiled LangGraph topology](docs/architecture-graph.png)
+```mermaid
+graph TD
+    START[START] --> input_guardrail[input_guardrail]
+    input_guardrail -- blocked --> rejection_output[rejection_output] --> END[END]
+    input_guardrail -- safe --> planner[planner]
+    planner -->|"Send fan-out (one branch per sub-question)"| search_worker[search_worker]
+    search_worker --> aggregate_search[aggregate_search]
+    aggregate_search -->|"Send fan-out (one branch per URL)"| scrape_worker[scrape_worker]
+    scrape_worker --> aggregate_documents[aggregate_documents]
+    aggregate_documents -->|"Send fan-out (one branch per doc)"| document_worker[document_worker]
+    document_worker --> critic[critic]
+    critic -- "gaps + rounds left" --> replan[replan]
+    replan --> search_worker
+    critic -- "sufficient / rounds exhausted" --> writer[writer]
+    writer --> output_guardrail[output_guardrail]
+    output_guardrail --> human_review[human_review]
+    human_review -- "approve / edit" --> report_assembler[report_assembler] --> END
+    human_review -- "reject" --> END
+```
 
-```
-            ┌──────────────┐
-   topic ──▶│ input guardrail│  reject hostile/malformed topics before any LLM spend
-            └──────┬───────┘
-                   ▼
-              ┌─────────┐
-              │ planner │  decompose into sub-questions (bounded count)
-              └────┬────┘
-        ┌──────────┼──────────┐   fan-out via LangGraph Send — one branch each
-        ▼          ▼          ▼
-   search_w   search_w    search_w
-        └──────────┼──────────┘
-                   ▼
-        ┌──────────┼──────────┐
-        ▼          ▼          ▼
-   scrape_w    scrape_w   scrape_w    robots.txt · rate limit · byte caps · SSRF guard
-        └──────────┼──────────┘
-                   ▼
-        ┌──────────┼──────────┐
-        ▼          ▼          ▼
-   document_w  document_w document_w   HTML/PDF parsing + injection sanitization
-        └──────────┼──────────┘
-                   ▼
-              ┌─────────┐     needs more & rounds left
-              │  critic │ ────────────────────▶ replan ──▶ (new sub-questions)
-              └────┬────┘
-                   ▼  (escalate if loop exhausted with gaps)
-              ┌─────────┐
-              │ writer  │  report + citations grounded in fetched sources
-              └────┬────┘
-                   ▼
-         ┌───────────────────┐
-         │ output guardrail  │  drop citations without verifiable source support
-         └────────┬──────────┘
-                  ▼
-         ┌───────────────────┐
-         │ human review gate │  LangGraph interrupt() — approve / edit / reject
-         └────────┬──────────┘
-                  ▼
-              assembler ──▶ END
-```
+- **Guardrail-first**: hostile or malformed topics are rejected before any LLM
+  spend; scraped pages are sanitized before they reach the model (OWASP
+  LLM01/LLM02).
+- **Parallel workers**: each aggregation stage fans out via LangGraph `Send`
+  and merges through reducers — search, scrape and parse branches run
+  concurrently, with per-domain politeness delays on the scraper.
+- **Bounded self-correction**: the critic grades coverage and citation support;
+  gaps trigger a re-planning round capped by `max_critic_rounds` (0 on `quick`
+  depth — single pass). Termination is guaranteed by construction.
+- **Human-in-the-loop**: the graph pauses on `interrupt()` at
+  `human_review` and resumes with `Command(resume=...)` — approve, edit the
+  draft, or reject. Round exhaustion with open gaps escalates automatically.
 
 Every design choice is defensible in an interview:
 
@@ -240,7 +229,10 @@ curl -s -o report.pdf http://localhost:8000/api/v1/research/<job_id>/report.pdf
 ### LangSmith tracing (real run)
 
 Every run produces a full graph trace — node-level latency, token counts and
-cost per agent role:
+cost per agent role. The trace below is a real `quick` run on
+*"AI Agents in the USA"*: **17.0s end-to-end, 4.8K tokens, $0.0012** —
+planner fan-out, parallel workers, critic, writer and the guardrail/HITL tail
+all visible in one tree:
 
 ![LangSmith trace of a real research run](docs/langsmith-trace.png)
 
@@ -311,7 +303,7 @@ docs/                # real captures referenced by this README
 ```bash
 ruff check .                          # lint
 mypy --strict app/                    # types (0 errors)
-pytest -v --cov=app                   # 142 tests, fully offline, 93% coverage
+pytest -v --cov=app                   # 143 tests, fully offline, 93% coverage
 uv run python -m evaluation.run_eval  # EDD quality gate
 ```
 
