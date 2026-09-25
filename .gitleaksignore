@@ -1,0 +1,6 @@
+# Intentional test fixture — not a real credential (tests must run offline with
+# a deterministic JWT secret). Finding lives in commit 51f20b5.
+51f20b52530463b7b229d323ebeb8f3c72eec75f:tests/test_research_api.py:generic-api-key:31
+# False positive — gitleaks merges the empty ADMIN_PASSWORD= placeholder with the
+# next assignment line. Finding lives in commit 51f20b5.
+51f20b52530463b7b229d323ebeb8f3c72eec75f:.env.example:generic-api-key:19
