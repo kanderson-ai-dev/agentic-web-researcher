@@ -350,15 +350,6 @@ If you need an agent that touches the open web safely — search, scrape,
 synthesize, cite — I can adapt this exact architecture (planner, parallel
 workers, critic, human-in-the-loop) to your domain.
 
-This is the third project in a four-project Agentic AI portfolio ladder:
-
-1. `agentic-api` — deterministic single-agent service (guardrails, tool-use, streaming).
-2. `agentic-rag-system` — self-correcting loop (Self-RAG: grade → rewrite → escalate).
-3. **`agentic-web-researcher` (this project)** — hybrid multi-agent: a planner
-   dispatches parallel specialized workers, a critic can re-plan, a writer
-   synthesizes.
-4. *(future)* a reusable, multi-tenant supervisor-workers agent framework.
-
 ## 📄 License
 
 [MIT](LICENSE)
